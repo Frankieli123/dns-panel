@@ -66,10 +66,17 @@
 ### 前置条件
 
 - Linux 服务器（Ubuntu / Debian 等）
-- 已安装 Docker 与 Docker Compose v2
+- 已安装 Git、Docker 与 Docker Compose v2
 - 开放端口 `3000`（或通过反代访问）
 
-### 1️⃣ 配置环境变量
+### 1️⃣ 克隆仓库
+
+```bash
+git clone https://github.com/Frankieli123/dns-panel.git
+cd dns-panel
+```
+
+### 2️⃣ 配置环境变量
 
 在仓库根目录创建 `.env` 文件：
 
@@ -89,7 +96,7 @@ openssl rand -base64 48  # JWT_SECRET（建议 32+ 字符）
 openssl rand -hex 16     # ENCRYPTION_KEY（必须 32 字符）
 ```
 
-### 2️⃣ 启动服务
+### 3️⃣ 启动服务
 
 ```bash
 # 首次启动（从源码构建）
@@ -102,14 +109,14 @@ docker compose ps
 docker compose logs -f
 ```
 
-### 3️⃣ 访问面板
+### 4️⃣ 访问面板
 
 | 地址 | 说明 |
 |------|------|
 | `http://<IP>:3000` | Web 界面 |
 | `http://<IP>:3000/health` | 健康检查 |
 
-### 4️⃣ 更新版本
+### 5️⃣ 更新版本
 
 ```bash
 git pull
@@ -117,7 +124,7 @@ docker compose down
 docker compose up -d --build
 ```
 
-### 5️⃣ 数据备份
+### 6️⃣ 数据备份
 
 数据库文件位于 `./data/database.db`：
 
@@ -125,7 +132,7 @@ docker compose up -d --build
 cp ./data/database.db ./data/database.db.backup
 ```
 
-### 6️⃣ 生产建议
+### 7️⃣ 生产建议
 
 **反向代理（推荐）：**
 
