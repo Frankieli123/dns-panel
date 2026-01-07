@@ -1,376 +1,260 @@
-# DNS Panel（dns-panel）
+# 🌐 DNS Panel
 
-一个现代化、基于 Docker 部署的多 DNS 服务商统一管理面板。支持多用户、多账户（凭证）隔离，统一管理域名与 DNS 解析记录，并提供操作日志审计。
+[![License: MIT](https://img.shields.io/badge/License-MIT-blue.svg)](LICENSE)
+[![Docker](https://img.shields.io/badge/Docker-Ready-2496ED?logo=docker)](https://hub.docker.com/r/a3180623/dns-panel)
 
-## ✨ 主要特性
+> 现代化的多 DNS 服务商统一管理面板：多用户、多凭证隔离，统一管理域名与 DNS 解析记录，并提供操作日志审计。
 
-- 🐳 **Docker 部署**：单镜像多阶段构建，前后端一体化部署
-- 🔐 **安全认证**：多用户系统，JWT 登录
-- 🔒 **敏感信息加密存储**：DNS 凭证（secrets）加密存储（需要 `ENCRYPTION_KEY`）
-- 🧩 **多服务商支持**：
-  - Cloudflare
-  - 阿里云（Aliyun）
-  - 腾讯云（DNSPod）
-  - 华为云（Huawei）
-  - 百度云（Baidu）
-  - 西部数码（West）
-  - 火山引擎（Huoshan）
-  - 京东云（JDCloud）
-  - DNSLA
-  - NameSilo
-  - PowerDNS
-  - Spaceship
-- 🌐 **域名管理**：查看/搜索账户下的域名列表
-- 📝 **DNS 记录管理**：新增/修改/删除记录；部分服务商支持更多能力（权重/线路/启停/备注等）
-- 🚀 **Cloudflare 自定义主机名（Custom Hostname）**：主机名管理、证书状态查看、回退源（Fallback Origin）配置
-- 📊 **操作日志**：记录用户操作，便于审计与追踪
-- 💾 **数据持久化**：SQLite 数据库（挂载 Volume 即可备份迁移）
+---
 
-## 🚀 快速开始
+## 📑 目录
 
-### 方式一：Docker Compose（使用仓库自带 `docker-compose.yml`）
+- [功能概览](#-功能概览)
+- [支持的服务商](#-支持的服务商)
+- [技术栈](#-技术栈)
+- [快速部署](#-快速部署docker-compose)
+- [Docker Hub 镜像](#-docker-hub-镜像部署)
+- [首次使用](#-首次使用)
+- [本地开发](#-本地开发)
+- [环境变量](#️-环境变量)
+- [常见问题](#-常见问题)
 
-说明：仓库自带的 `docker-compose.yml` 当前服务名/容器名仍为历史命名 `cf-dns-manager`（不影响使用）。
+---
 
-#### 1. 配置环境变量
+## ✨ 功能概览
 
-创建 `.env` 文件（或直接修改 `docker-compose.yml`）：
+| 功能 | 说明 |
+|------|------|
+| 🌐 多服务商支持 | 统一管理多个 DNS 服务商的域名和解析记录 |
+| 🧾 解析记录管理 | 增删改查；支持权重/线路/启停/备注等 |
+| ☁️ Cloudflare 增强 | 自定义主机名、证书状态、Fallback Origin |
+| 🔑 多用户隔离 | JWT 登录、账户与凭证隔离 |
+| 🔒 安全存储 | DNS 凭证加密存储（AES-256） |
+| 💾 数据持久化 | SQLite 数据库，挂载 Volume 即可备份迁移 |
 
-```bash
-# 🔴 必须设置（生产环境）
+---
+
+## 🏢 支持的服务商
+
+| 国内服务商 | 国际服务商 |
+|-----------|-----------|
+| 阿里云 | Cloudflare |
+| DNSPod（腾讯云） | NameSilo |
+| 华为云 | PowerDNS |
+| 百度云 | Spaceship |
+| 西部数码 | |
+| 火山引擎 | |
+| 京东云 | |
+| DNSLA | |
+
+---
+
+## 🧱 技术栈
+
+| 层级 | 技术 |
+|------|------|
+| 前端 | React + TypeScript + Vite + MUI + TanStack Query |
+| 后端 | Node.js 18 + Express + TypeScript + Prisma |
+| 数据库 | SQLite（默认） |
+
+---
+
+## 🚀 快速部署（Docker Compose）
+
+> 推荐方式：前后端一体，只需暴露一个端口。
+
+### 前置条件
+
+- Linux 服务器（Ubuntu / Debian 等）
+- 已安装 Docker 与 Docker Compose v2
+- 开放端口 `3000`（或通过反代访问）
+
+### 1️⃣ 配置环境变量
+
+在仓库根目录创建 `.env` 文件：
+
+```env
+# 必填：生产环境必须设置强随机值
 JWT_SECRET=your-random-jwt-secret-min-32-chars-here
 ENCRYPTION_KEY=your-32-character-encryption-key!!
-DATABASE_URL=file:/app/data/database.db
 
+# 可选：跨域访问时设置
+# CORS_ORIGIN=https://panel.example.com
 ```
 
 **生成安全密钥：**
-```bash
-# 生成 JWT_SECRET（建议 32+ 字符）
-openssl rand -base64 48
 
-# 生成 ENCRYPTION_KEY（必须 32 字符）
-openssl rand -hex 16
+```bash
+openssl rand -base64 48  # JWT_SECRET（建议 32+ 字符）
+openssl rand -hex 16     # ENCRYPTION_KEY（必须 32 字符）
 ```
 
-#### 2. 启动服务
+### 2️⃣ 启动服务
 
 ```bash
-docker-compose up -d --build
+# 首次启动（从源码构建）
+docker compose up -d --build
+
+# 查看状态
+docker compose ps
+
+# 查看日志
+docker compose logs -f
 ```
 
-#### 3. 访问应用
+### 3️⃣ 访问面板
 
-- **Web 界面**：[http://localhost:3000](http://localhost:3000)
-- **健康检查**：[http://localhost:3000/health](http://localhost:3000/health)
+| 地址 | 说明 |
+|------|------|
+| `http://<IP>:3000` | Web 界面 |
+| `http://<IP>:3000/health` | 健康检查 |
 
-#### 4. 初始配置
-
-1. 访问 Web 界面，注册一个新账户
-2. 登录后进入 **“设置”** 页面
-3. 在 **DNS 账户管理** 中新增/编辑你的 DNS 服务商凭证（每个凭证可自定义“账户别名”）
-4. 回到仪表盘选择服务商/账户后开始管理域名与解析记录
-
-### 方式二：使用已发布镜像（Docker Hub）
-
-镜像名：`a3180623/dns-panel`
+### 4️⃣ 更新版本
 
 ```bash
-# 运行容器
+git pull
+docker compose down
+docker compose up -d --build
+```
+
+### 5️⃣ 数据备份
+
+数据库文件位于 `./data/database.db`：
+
+```bash
+cp ./data/database.db ./data/database.db.backup
+```
+
+### 6️⃣ 生产建议
+
+**反向代理（推荐）：**
+
+1. 修改端口映射为 `127.0.0.1:3000:3000`
+2. 使用 Nginx/Caddy 终止 TLS，对外开放 80/443
+
+---
+
+## 📦 Docker Hub 镜像部署
+
+不想从源码构建？直接使用预构建镜像：
+
+```bash
 docker run -d \
   --name dns-panel \
   -p 3000:3000 \
   -e NODE_ENV=production \
   -e JWT_SECRET=your-secret-here \
-  -e ENCRYPTION_KEY=your-32-char-encryption-key!! \
+  -e ENCRYPTION_KEY=your-32-character-encryption-key!! \
   -e DATABASE_URL=file:/app/data/database.db \
   -v $(pwd)/data:/app/data \
   --restart unless-stopped \
   a3180623/dns-panel:latest
 ```
 
-说明：
+> 镜像由 GitHub Actions 自动构建，包含 `latest` 与 `sha` 标签。
 
-- 生产环境下 `JWT_SECRET` 与 `ENCRYPTION_KEY` 为必填项；否则服务启动会报错。
-- `DATABASE_URL` 建议固定为 `file:/app/data/database.db` 并挂载 `/app/data` 做持久化。
+---
 
-## 🛠️ 手动部署（开发环境）
+## 👤 首次使用
 
-如果您想进行二次开发或不使用 Docker，可以手动启动。
+1. **注册账号** - 打开 `http://<IP>:3000`，注册管理员账号
+2. **添加凭证** - 进入「设置」→「DNS 账户/凭证」，添加服务商 API 凭证
+3. **开始管理** - 回到仪表盘，选择服务商与账户，管理域名和记录
 
-### 前置要求
-- Node.js 18+
-- npm 或 yarn
+> ⚠️ Cloudflare 自定义主机名功能需要 Token 具备 `SSL and Certificates:Edit` 权限
 
-### 步骤
+---
 
-1. **克隆项目**:
-   ```bash
-   git clone <repository-url>
-   cd <project-dir>
-   ```
+## 🛠️ 本地开发
 
-2. **后端配置与启动**:
-   ```bash
-   cd server
+**前置要求：** Node.js 18+
 
-   # 安装依赖
-   npm install
+### 端口说明
 
-   # 配置环境变量（后端会读取 server/.env）
-   cp ../.env.example .env
-   # 编辑 server/.env 文件，设置 JWT_SECRET 和 ENCRYPTION_KEY
+| 服务 | 端口 | 说明 |
+|------|------|------|
+| 前端 | 5173 | Vite 开发服务器 |
+| 后端 | 4001 | Express API（可在 `server/.env` 修改） |
 
-   # 初始化数据库
-   npx prisma generate
-   npx prisma migrate dev
+> 修改后端端口后，需同步更新 `client/vite.config.ts` 的 proxy target
 
-   # 启动开发服务器
-   npm run dev
-   ```
+### 启动命令
 
-3. **前端配置与启动**（新终端）:
-   ```bash
-   cd client
-
-   # 安装依赖
-   npm install
-
-   # 启动开发服务器
-   npm run dev
-   ```
-
-4. **访问应用**:
-   - 前端：http://localhost:5173
-   - 后端 API：http://localhost:3000
-
-## ⚙️ 环境变量配置
-
-本项目通过环境变量配置后端服务。在 Docker 环境中，可以通过 `docker-compose.yml` 或 `.env` 文件设置。
-
-### 完整环境变量列表
-
-| 变量名 | 描述 | 默认值 | 必须设置 | 说明 |
-| :--- | :--- | :--- | :---: | :--- |
-| `JWT_SECRET` | JWT 签名密钥 | `default-secret-key` | 🔴 **是** | 用于签名用户登录 Token，生产环境必须修改 |
-| `ENCRYPTION_KEY` | 数据加密密钥 | `default-32-character-key-here!` | 🔴 **是** | 用于加密 DNS 凭证 secrets，必须 32 字符 |
-| `DATABASE_URL` | 数据库路径 | `file:./database.db` | 🔴 **是** | SQLite 数据库文件路径，生产环境必须显式设置并挂载到 volume（Docker 推荐：`file:/app/data/database.db`） |
-| `CORS_ORIGIN` | CORS 允许的源 | `http://localhost:5173` | 🟡 建议 | 生产环境需设置为实际域名 |
-| `NODE_ENV` | 运行环境 | `development` | ❌ 否 | `production` 或 `development` |
-| `PORT` | 服务器端口 | `3000` | ❌ 否 | 后端监听端口 |
-| `JWT_EXPIRES_IN` | Token 过期时间 | `7d` | ❌ 否 | 支持格式：`7d`, `24h`, `60m` |
-| `LOG_RETENTION_DAYS` | 日志保留天数 | `90` | ❌ 否 | 操作日志保留时长 |
-
-### 安全性说明
-
-⚠️ **重要**：
-- `JWT_SECRET` 和 `ENCRYPTION_KEY` 在生产环境中**必须**设置为强随机值
-- 使用默认值会导致严重的安全风险
-- `ENCRYPTION_KEY` 一旦设置后不要更改，否则已加密的数据将无法解密
-
-> **注意**：各 DNS 服务商的凭证（如 Cloudflare Token、阿里云 AK/SK、DNSPod SecretId/SecretKey 等）**不需要**通过环境变量配置；由用户在 Web 界面的“设置”页面中自行配置，后端会加密存储。
-
-## 📦 项目结构
-
-```
-project-root/
-├── docker-compose.yml          # Docker Compose 配置文件
-├── Dockerfile                  # 多阶段构建 Dockerfile（单镜像方案）
-├── .env.example                # 环境变量示例文件
-├── README.md                   # 项目文档
-│
-├── client/                     # React + TypeScript 前端
-│   ├── src/
-│   │   ├── components/         # React 组件
-│   │   ├── pages/              # 页面组件
-│   │   ├── services/           # API 服务
-│   │   └── types/              # TypeScript 类型定义
-│   ├── package.json
-│   └── vite.config.ts          # Vite 配置
-│
-└── server/                     # Node.js + Express 后端
-    ├── src/
-    │   ├── config/             # 配置文件
-    │   ├── middleware/         # Express 中间件
-    │   ├── routes/             # API 路由
-    │   ├── services/           # 业务逻辑
-    │   │   ├── auth.ts         # 认证服务
-    │   │   ├── cloudflare.ts   # Cloudflare API 封装
-    │   │   └── logger.ts       # 日志服务
-    │   ├── utils/              # 工具函数
-    │   │   └── encryption.ts   # AES-256 加密工具
-    │   ├── types/              # TypeScript 类型定义
-    │   └── index.ts            # 入口文件
-    ├── prisma/
-    │   └── schema.prisma       # 数据库模型（SQLite）
-    ├── package.json
-    └── tsconfig.json
-```
-
-## 🛡️ 安全特性
-
-### 多层安全保护
-
-1. **JWT 认证**
-   - 用户登录后颁发 JWT Token
-   - Token 包含用户 ID、用户名、邮箱等信息
-   - 可配置过期时间（默认 7 天）
-
-2. **DNS 凭证加密存储**
-   - 使用加密算法存储用户的 DNS 凭证 secrets（不同服务商字段不同）
-   - 加密密钥通过环境变量 `ENCRYPTION_KEY` 配置
-   - 数据库中仅存储加密后的 secrets
-
-3. **密码安全**
-   - 使用 bcrypt 加密用户密码（10 轮 salt）
-   - 强制密码复杂度要求：
-     - 最少 8 位
-     - 必须包含大小写字母和数字
-
-4. **速率限制**
-   - 登录接口：1 分钟内最多 5 次
-   - DNS 操作：1 分钟内最多 30 次
-   - 一般接口：1 分钟内最多 100 次
-
-5. **操作日志**
-   - 记录所有 DNS 操作（创建、更新、删除）
-   - 记录操作者 IP 地址
-   - 支持按时间、用户、操作类型筛选
-
-### 关于 DNS 凭证（账户）
-
-本应用设计为**多用户 SaaS 模式**：
-
-1. 系统管理员部署面板
-2. 用户自行注册账户
-3. 用户在“设置”页面新增自己的 DNS 服务商凭证（可自定义“账户别名”）
-4. 后端将凭证加密存储在数据库中
-5. 调用对应服务商 API 时按需解密使用
-
-以 Cloudflare 为例，建议的 Token 权限：
-- `Zone:Read`
-- `Zone:Edit`
-- `DNS:Edit`
-- `SSL and Certificates:Edit`（如需自定义主机名/证书相关能力）
-
-## 🔧 常见问题
-
-### 1. 容器启动后无法访问？
-
-检查端口映射和防火墙设置：
-```bash
-# 查看容器状态
-docker ps
-
-# 查看容器日志
-docker logs <container-name>
-
-# 检查健康状态
-curl http://localhost:3000/health
-```
-
-### 2. 数据库文件在哪里？
-
-默认位置：`./data/database.db`（宿主机）
-
-查看数据库内容：
-```bash
-sqlite3 ./data/database.db
-.tables
-.schema users
-```
-
-### 3. 如何备份数据？
-
-```bash
-# 备份数据库
-cp ./data/database.db ./data/database.db.backup
-
-# 或使用 SQLite 导出
-sqlite3 ./data/database.db .dump > backup.sql
-```
-
-### 4. 如何更新到最新版本？
-
-```bash
-# 拉取最新代码
-git pull
-
-# 重新构建并启动
-docker-compose down
-docker-compose build --no-cache
-docker-compose up -d
-```
-
-### 5. 忘记了 ENCRYPTION_KEY 怎么办？
-
-⚠️ **警告**：如果更改 `ENCRYPTION_KEY`，所有已加密的 Cloudflare API Token 将无法解密！
-
-解决方案：
-- 保持原有的 `ENCRYPTION_KEY` 不变
-- 或者让所有用户重新设置他们的 Cloudflare API Token
-
-## 📝 开发指南
-
-### 技术栈
-
-**前端**：
-- React 18
-- TypeScript
-- Vite
-- Material UI (MUI)
-- TanStack React Query
-- React Router
-- Axios
-
-**后端**：
-- Node.js 18
-- Express
-- TypeScript
-- Prisma ORM
-- SQLite
-- JWT
-- bcrypt
-
-### 本地开发
-
-1. 安装依赖并启动后端：
-   ```bash
-   cd server
-   npm install
-   npm run dev
-   ```
-
-2. 安装依赖并启动前端：
-   ```bash
-   cd client
-   npm install
-   npm run dev
-   ```
-
-### 数据库迁移
+**后端：**
 
 ```bash
 cd server
-
-# 创建新的迁移
-npx prisma migrate dev --name your_migration_name
-
-# 应用迁移
-npx prisma migrate deploy
-
-# 重置数据库（开发环境）
-npx prisma migrate reset
+npm install
+npx prisma generate
+npx prisma migrate dev
+npm run dev
 ```
 
-## 📄 License
+**前端（新终端）：**
 
-MIT License
+```bash
+cd client
+npm install
+npm run dev
+```
 
-## 🤝 贡献
+---
 
-欢迎提交 Issue 和 Pull Request！
+## ⚙️ 环境变量
 
-## 📮 联系方式
+### 必填（生产环境）
 
-如有问题或建议，QQ：64445547。
+| 变量 | 说明 |
+|------|------|
+| `JWT_SECRET` | JWT 签名密钥（建议 32+ 字符） |
+| `ENCRYPTION_KEY` | 加密密钥（**必须 32 字符**） |
+
+### 可选
+
+| 变量 | 默认值 | 说明 |
+|------|--------|------|
+| `CORS_ORIGIN` | - | 允许的前端来源 |
+| `JWT_EXPIRES_IN` | `7d` | JWT 过期时间 |
+| `LOG_RETENTION_DAYS` | `90` | 日志保留天数 |
+| `DATABASE_URL` | - | SQLite 连接串 |
+
+---
+
+## ❓ 常见问题
+
+<details>
+<summary><b>容器启动后无法访问？</b></summary>
+
+```bash
+docker compose ps          # 检查容器状态
+docker compose logs -f     # 查看日志
+curl http://localhost:3000/health  # 测试健康检查
+```
+
+</details>
+
+<details>
+<summary><b>忘记或修改了 ENCRYPTION_KEY？</b></summary>
+
+更改 `ENCRYPTION_KEY` 后，历史加密的 DNS 凭证将**无法解密**。只能保持原值，或让用户重新录入凭证。
+
+</details>
+
+---
+
+## 🗂️ 项目结构
+
+```text
+.
+├── client/               # 前端（React + Vite）
+├── server/               # 后端（Express + Prisma）
+├── docker-compose.yml    # Docker Compose 配置
+├── Dockerfile            # 多阶段构建（前后端一体）
+└── .env.example          # 环境变量示例
+```
+
+---
+
+## 📄 许可证
+
+[MIT License](LICENSE)

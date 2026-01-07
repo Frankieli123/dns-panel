@@ -1,9 +1,9 @@
 version: '3.8'
 
 services:
-  cf-dns-manager:
+  dns-panel:
     build: .
-    container_name: cf-dns-manager
+    container_name: dns-panel
     restart: unless-stopped
     ports:
       - "3000:3000"

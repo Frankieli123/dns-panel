@@ -6,7 +6,7 @@ on:
   workflow_dispatch:
 
 env:
-  # Image name: a3180623/cloudflare-dns-panel
+  # Image name: a3180623/dns-panel
   IMAGE_NAME: a3180623/dns-panel
 
 jobs:
