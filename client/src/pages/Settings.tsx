@@ -24,6 +24,7 @@ import {
 import { updatePassword } from '@/services/auth';
 import { isStrongPassword } from '@/utils/validators';
 import DnsCredentialManagement from '@/components/Settings/DnsCredentialManagement';
+import TwoFactorSettings from '@/components/Settings/TwoFactorSettings';
 
 interface PasswordForm {
   oldPassword: string;
@@ -196,6 +197,10 @@ export default function Settings() {
                   </Box>
                 </Stack>
               </form>
+
+              <Divider sx={{ my: 3 }} />
+
+              <TwoFactorSettings />
 
               <Divider sx={{ my: 3 }} />
 

@@ -3,9 +3,21 @@ import bcrypt from 'bcrypt';
 import jwt from 'jsonwebtoken';
 import { config } from '../config';
 import { encrypt, decrypt } from '../utils/encryption';
+import { TwoFactorService } from './twoFactor';
 
 const prisma = new PrismaClient();
 const SALT_ROUNDS = 10;
+
+interface LoginResult {
+  requires2FA: boolean;
+  tempToken?: string;
+  token?: string;
+  user?: {
+    id: number;
+    username: string;
+    email: string | null;
+  };
+}
 
 /**
  * 认证服务
@@ -70,9 +82,9 @@ export class AuthService {
   }
 
   /**
-   * 用户登录
+   * 用户登录（支持 2FA）
    */
-  static async login(params: { username: string; password: string }) {
+  static async login(params: { username: string; password: string }): Promise<LoginResult> {
     // 查找用户（支持用户名或邮箱登录）
     const user = await prisma.user.findFirst({
       where: {
@@ -91,7 +103,16 @@ export class AuthService {
       throw new Error('用户名或密码错误');
     }
 
-    // 生成 JWT Token
+    // 如果用户启用了 2FA，返回临时 token
+    if (user.twoFactorEnabled) {
+      const tempToken = TwoFactorService.generateTempToken(user.id, user.username);
+      return {
+        requires2FA: true,
+        tempToken,
+      };
+    }
+
+    // 未启用 2FA，直接生成 JWT Token
     const token = jwt.sign(
       {
         id: user.id,
@@ -103,6 +124,7 @@ export class AuthService {
     );
 
     return {
+      requires2FA: false,
       token,
       user: {
         id: user.id,
@@ -123,6 +145,7 @@ export class AuthService {
         username: true,
         email: true,
         cfAccountId: true,
+        twoFactorEnabled: true,
         createdAt: true,
         updatedAt: true,
       },
@@ -200,3 +223,4 @@ export class AuthService {
     });
   }
 }
+

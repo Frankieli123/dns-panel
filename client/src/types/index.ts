@@ -17,8 +17,10 @@ export interface LoginResponse {
   success: boolean;
   message: string;
   data: {
-    token: string;
-    user: User;
+    requires2FA?: boolean;
+    tempToken?: string;
+    token?: string;
+    user?: User;
   };
 }
 

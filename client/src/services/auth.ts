@@ -23,6 +23,44 @@ export const login = async (params: {
 };
 
 /**
+ * 验证 2FA 码完成登录
+ */
+export const verify2FA = async (params: {
+  tempToken: string;
+  code: string;
+}): Promise<LoginResponse> => {
+  return api.post('/auth/2fa/verify', params);
+};
+
+/**
+ * 获取 2FA 状态
+ */
+export const get2FAStatus = async (): Promise<ApiResponse<{ enabled: boolean }>> => {
+  return api.get('/auth/2fa/status');
+};
+
+/**
+ * 生成 2FA 密钥和 QR 码
+ */
+export const setup2FA = async (): Promise<ApiResponse<{ secret: string; qrCodeDataUrl: string }>> => {
+  return api.post('/auth/2fa/setup');
+};
+
+/**
+ * 启用 2FA（需要验证码和密码）
+ */
+export const enable2FA = async (code: string, password: string): Promise<ApiResponse> => {
+  return api.post('/auth/2fa/enable', { code, password });
+};
+
+/**
+ * 禁用 2FA
+ */
+export const disable2FA = async (password: string): Promise<ApiResponse> => {
+  return api.post('/auth/2fa/disable', { password });
+};
+
+/**
  * 获取当前用户信息
  */
 export const getCurrentUser = async (): Promise<ApiResponse<{ user: User }>> => {

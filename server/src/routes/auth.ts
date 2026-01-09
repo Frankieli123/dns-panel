@@ -1,5 +1,6 @@
 import { Router } from 'express';
 import { AuthService } from '../services/auth';
+import { TwoFactorService } from '../services/twoFactor';
 import { LoggerService } from '../services/logger';
 import { successResponse, errorResponse } from '../utils/response';
 import { authenticateToken } from '../middleware/auth';
@@ -37,7 +38,7 @@ router.post('/register', async (req, res) => {
 
 /**
  * POST /api/auth/login
- * 用户登录
+ * 用户登录（支持 2FA）
  */
 router.post('/login', loginLimiter, async (req, res) => {
   try {
@@ -49,9 +50,165 @@ router.post('/login', loginLimiter, async (req, res) => {
 
     const result = await AuthService.login({ username, password });
 
-    return successResponse(res, result, '登录成功');
+    if (result.requires2FA) {
+      return successResponse(res, {
+        requires2FA: true,
+        tempToken: result.tempToken,
+      }, '请输入两步验证码');
+    }
+
+    return successResponse(res, {
+      token: result.token,
+      user: result.user,
+    }, '登录成功');
   } catch (error: any) {
     return errorResponse(res, error.message, 401);
+  }
+});
+
+/**
+ * POST /api/auth/2fa/verify
+ * 验证 2FA 码完成登录
+ */
+router.post('/2fa/verify', loginLimiter, async (req, res) => {
+  try {
+    const { tempToken, code } = req.body;
+
+    if (!tempToken || !code) {
+      return errorResponse(res, '缺少验证参数', 400);
+    }
+
+    const result = await TwoFactorService.verifyAndGenerateToken(tempToken, code);
+
+    return successResponse(res, {
+      token: result.token,
+      user: result.user,
+    }, '登录成功');
+  } catch (error: any) {
+    return errorResponse(res, error.message, 401);
+  }
+});
+
+/**
+ * GET /api/auth/2fa/status
+ * 获取当前用户的 2FA 状态
+ */
+router.get('/2fa/status', authenticateToken, async (req: AuthRequest, res) => {
+  try {
+    const status = await TwoFactorService.getStatus(req.user!.id);
+    return successResponse(res, status, '获取 2FA 状态成功');
+  } catch (error: any) {
+    return errorResponse(res, error.message, 400);
+  }
+});
+
+/**
+ * POST /api/auth/2fa/setup
+ * 生成 2FA 密钥和 QR 码
+ */
+router.post('/2fa/setup', authenticateToken, async (req: AuthRequest, res) => {
+  try {
+    const result = await TwoFactorService.generateSecret(req.user!.id);
+
+    await LoggerService.createLog({
+      userId: req.user!.id,
+      action: 'UPDATE',
+      resourceType: 'USER',
+      recordName: req.user?.username,
+      status: 'SUCCESS',
+      ipAddress: getClientIp(req),
+      newValue: JSON.stringify({ action: '2fa_setup' }),
+    });
+
+    return successResponse(res, result, '2FA 密钥生成成功');
+  } catch (error: any) {
+    return errorResponse(res, error.message, 400);
+  }
+});
+
+/**
+ * POST /api/auth/2fa/enable
+ * 启用 2FA（需要验证 TOTP 码和密码）
+ */
+router.post('/2fa/enable', authenticateToken, async (req: AuthRequest, res) => {
+  try {
+    const { code, password } = req.body;
+
+    if (!code) {
+      return errorResponse(res, '请输入验证码', 400);
+    }
+
+    if (!password) {
+      return errorResponse(res, '请输入密码', 400);
+    }
+
+    await TwoFactorService.enable(req.user!.id, code, password);
+
+    await LoggerService.createLog({
+      userId: req.user!.id,
+      action: 'UPDATE',
+      resourceType: 'USER',
+      recordName: req.user?.username,
+      status: 'SUCCESS',
+      ipAddress: getClientIp(req),
+      newValue: JSON.stringify({ twoFactorEnabled: true }),
+    });
+
+    return successResponse(res, null, '2FA 已启用');
+  } catch (error: any) {
+    try {
+      await LoggerService.createLog({
+        userId: req.user!.id,
+        action: 'UPDATE',
+        resourceType: 'USER',
+        recordName: req.user?.username,
+        status: 'FAILED',
+        ipAddress: getClientIp(req),
+        errorMessage: error?.message || '2FA 启用失败',
+      });
+    } catch {}
+    return errorResponse(res, error.message, 400);
+  }
+});
+
+/**
+ * POST /api/auth/2fa/disable
+ * 禁用 2FA（需要验证密码）
+ */
+router.post('/2fa/disable', authenticateToken, async (req: AuthRequest, res) => {
+  try {
+    const { password } = req.body;
+
+    if (!password) {
+      return errorResponse(res, '请输入密码', 400);
+    }
+
+    await TwoFactorService.disable(req.user!.id, password);
+
+    await LoggerService.createLog({
+      userId: req.user!.id,
+      action: 'UPDATE',
+      resourceType: 'USER',
+      recordName: req.user?.username,
+      status: 'SUCCESS',
+      ipAddress: getClientIp(req),
+      newValue: JSON.stringify({ twoFactorEnabled: false }),
+    });
+
+    return successResponse(res, null, '2FA 已禁用');
+  } catch (error: any) {
+    try {
+      await LoggerService.createLog({
+        userId: req.user!.id,
+        action: 'UPDATE',
+        resourceType: 'USER',
+        recordName: req.user?.username,
+        status: 'FAILED',
+        ipAddress: getClientIp(req),
+        errorMessage: error?.message || '2FA 禁用失败',
+      });
+    } catch {}
+    return errorResponse(res, error.message, 400);
   }
 });
 
