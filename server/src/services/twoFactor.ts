@@ -188,7 +188,18 @@ export class TwoFactorService {
   static async verifyAndGenerateToken(
     tempToken: string,
     totpCode: string
-  ): Promise<{ token: string; user: { id: number; username: string; email: string | null } }> {
+  ): Promise<{
+    token: string;
+    user: {
+      id: number;
+      username: string;
+      email: string | null;
+      domainExpiryDisplayMode: string;
+      domainExpiryThresholdDays: number;
+      domainExpiryNotifyEnabled: boolean;
+      domainExpiryNotifyWebhookUrl: string | null;
+    };
+  }> {
     const pending = this.verifyTempToken(tempToken);
     if (!pending) {
       throw new Error('验证已过期，请重新登录');
@@ -202,6 +213,10 @@ export class TwoFactorService {
         email: true,
         twoFactorSecret: true,
         twoFactorEnabled: true,
+        domainExpiryDisplayMode: true,
+        domainExpiryThresholdDays: true,
+        domainExpiryNotifyEnabled: true,
+        domainExpiryNotifyWebhookUrl: true,
       },
     });
 
@@ -236,6 +251,10 @@ export class TwoFactorService {
         id: user.id,
         username: user.username,
         email: user.email,
+        domainExpiryDisplayMode: user.domainExpiryDisplayMode,
+        domainExpiryThresholdDays: user.domainExpiryThresholdDays,
+        domainExpiryNotifyEnabled: user.domainExpiryNotifyEnabled,
+        domainExpiryNotifyWebhookUrl: user.domainExpiryNotifyWebhookUrl,
       },
     };
   }

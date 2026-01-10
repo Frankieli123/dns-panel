@@ -226,6 +226,58 @@ router.get('/me', authenticateToken, async (req: AuthRequest, res) => {
 });
 
 /**
+ * PUT /api/auth/domain-expiry-settings
+ * 更新域名到期展示/阈值/通知设置
+ */
+router.put('/domain-expiry-settings', authenticateToken, async (req: AuthRequest, res) => {
+  try {
+    const { displayMode, thresholdDays, notifyEnabled, webhookUrl } = req.body || {};
+
+    if (displayMode !== undefined && displayMode !== 'date' && displayMode !== 'days') {
+      return errorResponse(res, 'displayMode 仅支持 date 或 days', 400);
+    }
+
+    const user = await AuthService.updateDomainExpirySettings(req.user!.id, {
+      displayMode,
+      thresholdDays,
+      notifyEnabled,
+      webhookUrl,
+    });
+
+    await LoggerService.createLog({
+      userId: req.user!.id,
+      action: 'UPDATE',
+      resourceType: 'USER',
+      recordName: req.user?.username,
+      status: 'SUCCESS',
+      ipAddress: getClientIp(req),
+      newValue: JSON.stringify({
+        action: 'domain_expiry_settings',
+        displayMode: user.domainExpiryDisplayMode,
+        thresholdDays: user.domainExpiryThresholdDays,
+        notifyEnabled: user.domainExpiryNotifyEnabled,
+        webhookUrl: user.domainExpiryNotifyWebhookUrl ? 'set' : null,
+      }),
+    });
+
+    return successResponse(res, { user }, '设置已保存');
+  } catch (error: any) {
+    try {
+      await LoggerService.createLog({
+        userId: req.user!.id,
+        action: 'UPDATE',
+        resourceType: 'USER',
+        recordName: req.user?.username,
+        status: 'FAILED',
+        ipAddress: getClientIp(req),
+        errorMessage: error?.message || '设置保存失败',
+      });
+    } catch {}
+    return errorResponse(res, error.message, 400);
+  }
+});
+
+/**
  * PUT /api/auth/password
  * 修改密码
  */

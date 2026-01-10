@@ -12,7 +12,14 @@ import {
   Grid,
   Stack,
   InputAdornment,
-  IconButton
+  IconButton,
+  FormControl,
+  FormLabel,
+  RadioGroup,
+  FormControlLabel,
+  Radio,
+  Switch,
+  CircularProgress
 } from '@mui/material';
 import { useForm } from 'react-hook-form';
 import {
@@ -21,7 +28,7 @@ import {
   Security as SecurityIcon,
   Save as SaveIcon
 } from '@mui/icons-material';
-import { updatePassword } from '@/services/auth';
+import { getCurrentUser, getStoredUser, updateDomainExpirySettings, updatePassword } from '@/services/auth';
 import { isStrongPassword } from '@/utils/validators';
 import DnsCredentialManagement from '@/components/Settings/DnsCredentialManagement';
 import TwoFactorSettings from '@/components/Settings/TwoFactorSettings';
@@ -46,6 +53,14 @@ export default function Settings() {
   const [domainsPerPageSuccess, setDomainsPerPageSuccess] = useState('');
   const [domainsPerPageError, setDomainsPerPageError] = useState('');
 
+  const [expirySettingsSuccess, setExpirySettingsSuccess] = useState('');
+  const [expirySettingsError, setExpirySettingsError] = useState('');
+  const [expirySettingsSaving, setExpirySettingsSaving] = useState(false);
+  const [expiryDisplayMode, setExpiryDisplayMode] = useState<'date' | 'days'>('date');
+  const [expiryThresholdDays, setExpiryThresholdDays] = useState<string>('7');
+  const [expiryNotifyEnabled, setExpiryNotifyEnabled] = useState(false);
+  const [expiryWebhookUrl, setExpiryWebhookUrl] = useState('');
+
   const [showOldPassword, setShowOldPassword] = useState(false);
   const [showNewPassword, setShowNewPassword] = useState(false);
 
@@ -65,6 +80,47 @@ export default function Settings() {
     if (Number.isFinite(parsed) && parsed >= 20) {
       setDomainsPerPage(String(parsed));
     }
+
+    const stored = getStoredUser();
+    if (stored?.domainExpiryDisplayMode === 'days' || stored?.domainExpiryDisplayMode === 'date') {
+      setExpiryDisplayMode(stored.domainExpiryDisplayMode);
+    }
+    if (typeof stored?.domainExpiryThresholdDays === 'number' && Number.isFinite(stored.domainExpiryThresholdDays)) {
+      setExpiryThresholdDays(String(stored.domainExpiryThresholdDays));
+    }
+    if (typeof stored?.domainExpiryNotifyEnabled === 'boolean') {
+      setExpiryNotifyEnabled(stored.domainExpiryNotifyEnabled);
+    }
+    if (typeof stored?.domainExpiryNotifyWebhookUrl === 'string') {
+      setExpiryWebhookUrl(stored.domainExpiryNotifyWebhookUrl);
+    }
+  }, []);
+
+  useEffect(() => {
+    (async () => {
+      try {
+        const res = await getCurrentUser();
+        const user = res?.data?.user;
+        if (!user) return;
+
+        localStorage.setItem('user', JSON.stringify(user));
+
+        if (user.domainExpiryDisplayMode === 'days' || user.domainExpiryDisplayMode === 'date') {
+          setExpiryDisplayMode(user.domainExpiryDisplayMode);
+        }
+        if (typeof user.domainExpiryThresholdDays === 'number' && Number.isFinite(user.domainExpiryThresholdDays)) {
+          setExpiryThresholdDays(String(user.domainExpiryThresholdDays));
+        }
+        if (typeof user.domainExpiryNotifyEnabled === 'boolean') {
+          setExpiryNotifyEnabled(user.domainExpiryNotifyEnabled);
+        }
+        if (typeof user.domainExpiryNotifyWebhookUrl === 'string') {
+          setExpiryWebhookUrl(user.domainExpiryNotifyWebhookUrl);
+        } else {
+          setExpiryWebhookUrl('');
+        }
+      } catch {}
+    })();
   }, []);
 
   const onPasswordSubmit = async (data: PasswordForm) => {
@@ -99,6 +155,42 @@ export default function Settings() {
     window.dispatchEvent(new CustomEvent(DOMAINS_PER_PAGE_CHANGED_EVENT, { detail: safe }));
     setDomainsPerPage(String(safe));
     setDomainsPerPageSuccess('设置已保存');
+  };
+
+  const onSaveExpirySettings = async () => {
+    setExpirySettingsSuccess('');
+    setExpirySettingsError('');
+
+    const threshold = Math.floor(Number(expiryThresholdDays));
+    if (!Number.isFinite(threshold) || threshold < 1 || threshold > 365) {
+      setExpirySettingsError('到期阈值应为 1-365 的整数');
+      return;
+    }
+
+    if (expiryNotifyEnabled && !expiryWebhookUrl.trim()) {
+      setExpirySettingsError('启用通知时需填写 Webhook URL');
+      return;
+    }
+
+    setExpirySettingsSaving(true);
+    try {
+      const res = await updateDomainExpirySettings({
+        displayMode: expiryDisplayMode,
+        thresholdDays: threshold,
+        notifyEnabled: expiryNotifyEnabled,
+        webhookUrl: expiryWebhookUrl.trim() ? expiryWebhookUrl.trim() : null,
+      });
+
+      const user = res?.data?.user;
+      if (user) {
+        localStorage.setItem('user', JSON.stringify(user));
+      }
+      setExpirySettingsSuccess('设置已保存');
+    } catch (err: any) {
+      setExpirySettingsError(err || '设置保存失败');
+    } finally {
+      setExpirySettingsSaving(false);
+    }
   };
 
   return (
@@ -242,6 +334,83 @@ export default function Settings() {
                     保存
                   </Button>
                 </Stack>
+              </Stack>
+
+              <Divider sx={{ my: 3 }} />
+
+              <Stack spacing={2}>
+                <Typography variant="subtitle1" fontWeight={600}>
+                  域名到期
+                </Typography>
+
+                {expirySettingsSuccess && (
+                  <Alert severity="success">
+                    {expirySettingsSuccess}
+                  </Alert>
+                )}
+                {expirySettingsError && (
+                  <Alert severity="error">
+                    {expirySettingsError}
+                  </Alert>
+                )}
+
+                <FormControl>
+                  <FormLabel>列表显示</FormLabel>
+                  <RadioGroup
+                    row
+                    value={expiryDisplayMode}
+                    onChange={(e) => setExpiryDisplayMode((e.target as HTMLInputElement).value as any)}
+                  >
+                    <FormControlLabel value="date" control={<Radio />} label="到期日期" />
+                    <FormControlLabel value="days" control={<Radio />} label="剩余天数" />
+                  </RadioGroup>
+                </FormControl>
+
+                <TextField
+                  value={expiryThresholdDays}
+                  onChange={(e) => setExpiryThresholdDays(e.target.value)}
+                  type="number"
+                  label="到期阈值（天）"
+                  size="small"
+                  sx={{ width: { xs: '100%', sm: 240 } }}
+                  InputProps={{
+                    inputProps: { min: 1, max: 365 },
+                  }}
+                  helperText="当域名剩余天数 ≤ 阈值时触发通知"
+                />
+
+                <FormControlLabel
+                  control={
+                    <Switch
+                      checked={expiryNotifyEnabled}
+                      onChange={(e) => setExpiryNotifyEnabled(e.target.checked)}
+                    />
+                  }
+                  label="启用到期通知（Webhook）"
+                />
+
+                <TextField
+                  value={expiryWebhookUrl}
+                  onChange={(e) => setExpiryWebhookUrl(e.target.value)}
+                  disabled={!expiryNotifyEnabled}
+                  label="Webhook URL"
+                  size="small"
+                  placeholder="https://example.com/webhook"
+                  helperText="服务器每天检查一次；命中阈值将向该 URL POST JSON"
+                />
+
+                <Box>
+                  <Button
+                    variant="outlined"
+                    size="small"
+                    startIcon={expirySettingsSaving ? <CircularProgress size={16} /> : <SaveIcon />}
+                    onClick={onSaveExpirySettings}
+                    disabled={expirySettingsSaving}
+                    sx={{ height: 40 }}
+                  >
+                    保存
+                  </Button>
+                </Box>
               </Stack>
             </CardContent>
           </Card>

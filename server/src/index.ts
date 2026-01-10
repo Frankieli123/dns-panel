@@ -12,6 +12,8 @@ import logRoutes from './routes/logs';
 // 新增：多提供商路由
 import dnsCredentialRoutes from './routes/dnsCredentials';
 import dnsRecordRoutes from './routes/dnsRecords';
+import domainExpiryRoutes from './routes/domainExpiry';
+import { startDomainExpiryScheduler } from './jobs/domainExpiryScheduler';
 
 // 验证配置
 validateConfig();
@@ -35,6 +37,7 @@ app.use('/api/dns-credentials', dnsCredentialRoutes); // 新版多提供商凭�
 app.use('/api/dns-records', dnsRecordRoutes);        // 新版多提供商 DNS 路由
 app.use('/api/hostnames', hostnameRoutes);
 app.use('/api/logs', logRoutes);
+app.use('/api/domain-expiry', domainExpiryRoutes);
 
 // 静态文件服务 (生产环境)
 // 在 Docker 中，前端构建产物将被复制到 /app/public
@@ -70,6 +73,8 @@ app.listen(config.port, () => {
 ║   服务器已启动: http://localhost:${config.port.toString().padEnd(18)}║
 ╚═══════════════════════════════════════════════════════╝
   `);
+
+  startDomainExpiryScheduler();
 });
 
 // 优雅关闭

@@ -20,6 +20,10 @@ model User {
   cfAccountId       String?  // Cloudflare Account ID (可选) - 保留用于迁移
   twoFactorSecret   String?  // TOTP 2FA 密钥 (AES-256 加密)
   twoFactorEnabled  Boolean  @default(false) // 是否启用 2FA
+  domainExpiryDisplayMode   String   @default("date") // date | days
+  domainExpiryThresholdDays Int      @default(7)
+  domainExpiryNotifyEnabled Boolean  @default(false)
+  domainExpiryNotifyWebhookUrl String?
   createdAt         DateTime @default(now())
   updatedAt         DateTime @updatedAt
 
@@ -27,6 +31,7 @@ model User {
   logs              Log[]
   dnsCredentials    DnsCredential[]
   cfCredentials     CfCredential[]    @relation("CfCredentials") // 废弃，仅用于迁移
+  domainExpiryNotifications DomainExpiryNotification[]
 
   @@map("users")
 }
@@ -103,4 +108,24 @@ model Cache {
 
   @@index([expiresAt])
   @@map("cache")
+}
+
+model DomainExpiryNotification {
+  id            Int      @id @default(autoincrement())
+  userId        Int
+  user          User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  domain        String
+  expiresAt     DateTime
+  thresholdDays Int
+  channel       String   // webhook
+  status        String   // SENT | FAILED
+  payload       String?  // JSON
+  errorMessage  String?
+  createdAt     DateTime @default(now())
+
+  @@unique([userId, domain, expiresAt, thresholdDays, channel])
+  @@index([userId])
+  @@index([domain])
+  @@index([createdAt])
+  @@map("domain_expiry_notifications")
 }

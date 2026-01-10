@@ -38,6 +38,7 @@ import {
   Business as BusinessIcon,
   OpenInNew as OpenInNewIcon,
   AccessTime as AccessTimeIcon,
+  Event as EventIcon,
   CloudQueue as CloudflareIcon,
   Storage as AliyunIcon,
   Language as DnspodIcon,
@@ -52,6 +53,8 @@ import {
   RocketLaunch as SpaceshipIcon,
 } from '@mui/icons-material';
 import { getDomains, refreshDomains } from '@/services/domains';
+import { getStoredUser } from '@/services/auth';
+import { lookupDomainExpiry } from '@/services/domainExpiry';
 import { formatRelativeTime } from '@/utils/formatters';
 import { alpha } from '@mui/material/styles';
 import { Domain } from '@/types';
@@ -280,6 +283,48 @@ export default function Dashboard() {
     return filteredDomains.slice(start, end);
   }, [filteredDomains, page, rowsPerPage]);
 
+  const expiryDisplayMode = getStoredUser()?.domainExpiryDisplayMode === 'days' ? 'days' : 'date';
+  const expiryLookupDomains = useMemo(
+    () => Array.from(new Set(pagedDomains.map(d => d.name.toLowerCase()))),
+    [pagedDomains]
+  );
+
+  const { data: expiryData } = useQuery({
+    queryKey: ['domain-expiry', expiryLookupDomains],
+    queryFn: () => lookupDomainExpiry(expiryLookupDomains),
+    enabled: expiryLookupDomains.length > 0,
+    staleTime: 10 * 60 * 1000,
+  });
+
+  const expiryByDomain = useMemo(() => {
+    const map = new Map<string, string | undefined>();
+    const list = (expiryData as any)?.data?.results || [];
+    list.forEach((r: any) => {
+      const domain = typeof r?.domain === 'string' ? r.domain.toLowerCase() : '';
+      const expiresAt = typeof r?.expiresAt === 'string' ? r.expiresAt : undefined;
+      if (domain) map.set(domain, expiresAt);
+    });
+    return map;
+  }, [expiryData]);
+
+  const formatExpiryValue = (domainName: string): string => {
+    const key = String(domainName || '').trim().toLowerCase();
+    const expiresAt = expiryByDomain.get(key);
+    if (!expiresAt) return '-';
+
+    const datePart = expiresAt.slice(0, 10);
+    if (expiryDisplayMode === 'date') return datePart;
+
+    const expiresMs = Date.parse(`${datePart}T00:00:00Z`);
+    if (!Number.isFinite(expiresMs)) return '-';
+
+    const now = new Date();
+    const todayUtcMs = Date.UTC(now.getUTCFullYear(), now.getUTCMonth(), now.getUTCDate());
+    const dLeft = Math.floor((expiresMs - todayUtcMs) / 86_400_000);
+    if (!Number.isFinite(dLeft)) return '-';
+    return `${dLeft} 天`;
+  };
+
   const getStatusConfig = (status: string) => {
     const raw = String(status || '').trim();
     const s = raw.toLowerCase();
@@ -416,6 +461,13 @@ export default function Dashboard() {
                   更新于 {domain.updatedAt ? formatRelativeTime(domain.updatedAt) : '-'}
                 </Typography>
               </Stack>
+
+              <Stack direction="row" alignItems="center" spacing={0.5} sx={{ color: 'text.secondary', fontSize: '0.75rem', mt: 0.5 }}>
+                <EventIcon sx={{ fontSize: 14 }} />
+                <Typography variant="caption">
+                  到期: {formatExpiryValue(domain.name)}
+                </Typography>
+              </Stack>
             </CardContent>
             
             <Collapse in={isExpanded} timeout="auto" unmountOnExit>
@@ -441,6 +493,7 @@ export default function Dashboard() {
             {showAccountColumn && <TableCell>所属账户</TableCell>}
             <TableCell>状态</TableCell>
             <TableCell>最后更新</TableCell>
+            <TableCell>到期</TableCell>
           </TableRow>
         </TableHead>
         <TableBody>
@@ -538,9 +591,12 @@ export default function Dashboard() {
                   <TableCell sx={{ color: 'text.secondary' }}>
                     {domain.updatedAt ? formatRelativeTime(domain.updatedAt) : '-'}
                   </TableCell>
+                  <TableCell sx={{ color: 'text.secondary' }}>
+                    {formatExpiryValue(domain.name)}
+                  </TableCell>
                 </TableRow>
                 <TableRow>
-                  <TableCell style={{ padding: 0 }} colSpan={showAccountColumn ? 5 : 4}>
+                  <TableCell style={{ padding: 0 }} colSpan={showAccountColumn ? 6 : 5}>
                     <Collapse in={isExpanded} timeout="auto" unmountOnExit>
                       <DnsManagement zoneId={domain.id} credentialId={domain.credentialId} />
                     </Collapse>

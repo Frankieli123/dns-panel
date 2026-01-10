@@ -6,6 +6,10 @@ export interface User {
   username: string;
   email?: string | null;
   cfAccountId?: string;
+  domainExpiryDisplayMode?: 'date' | 'days';
+  domainExpiryThresholdDays?: number;
+  domainExpiryNotifyEnabled?: boolean;
+  domainExpiryNotifyWebhookUrl?: string | null;
   createdAt: string;
   updatedAt: string;
 }

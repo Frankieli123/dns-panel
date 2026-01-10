@@ -16,6 +16,10 @@ interface LoginResult {
     id: number;
     username: string;
     email: string | null;
+    domainExpiryDisplayMode: string;
+    domainExpiryThresholdDays: number;
+    domainExpiryNotifyEnabled: boolean;
+    domainExpiryNotifyWebhookUrl: string | null;
   };
 }
 
@@ -130,6 +134,10 @@ export class AuthService {
         id: user.id,
         username: user.username,
         email: user.email,
+        domainExpiryDisplayMode: user.domainExpiryDisplayMode,
+        domainExpiryThresholdDays: user.domainExpiryThresholdDays,
+        domainExpiryNotifyEnabled: user.domainExpiryNotifyEnabled,
+        domainExpiryNotifyWebhookUrl: user.domainExpiryNotifyWebhookUrl,
       },
     };
   }
@@ -146,6 +154,10 @@ export class AuthService {
         email: true,
         cfAccountId: true,
         twoFactorEnabled: true,
+        domainExpiryDisplayMode: true,
+        domainExpiryThresholdDays: true,
+        domainExpiryNotifyEnabled: true,
+        domainExpiryNotifyWebhookUrl: true,
         createdAt: true,
         updatedAt: true,
       },
@@ -154,6 +166,55 @@ export class AuthService {
     if (!user) {
       throw new Error('用户不存在');
     }
+
+    return user;
+  }
+
+  static async updateDomainExpirySettings(
+    userId: number,
+    input: {
+      displayMode?: 'date' | 'days';
+      thresholdDays?: number;
+      notifyEnabled?: boolean;
+      webhookUrl?: string | null;
+    }
+  ) {
+    const data: any = {};
+
+    if (input.displayMode) {
+      data.domainExpiryDisplayMode = input.displayMode;
+    }
+
+    if (input.thresholdDays !== undefined) {
+      const parsed = Math.floor(Number(input.thresholdDays));
+      if (!Number.isFinite(parsed) || parsed < 1 || parsed > 365) {
+        throw new Error('阈值天数无效，应为 1-365 的整数');
+      }
+      data.domainExpiryThresholdDays = parsed;
+    }
+
+    if (input.notifyEnabled !== undefined) {
+      data.domainExpiryNotifyEnabled = !!input.notifyEnabled;
+    }
+
+    if (input.webhookUrl !== undefined) {
+      const raw = typeof input.webhookUrl === 'string' ? input.webhookUrl.trim() : '';
+      data.domainExpiryNotifyWebhookUrl = raw ? raw : null;
+    }
+
+    const user = await prisma.user.update({
+      where: { id: userId },
+      data,
+      select: {
+        id: true,
+        username: true,
+        email: true,
+        domainExpiryDisplayMode: true,
+        domainExpiryThresholdDays: true,
+        domainExpiryNotifyEnabled: true,
+        domainExpiryNotifyWebhookUrl: true,
+      },
+    });
 
     return user;
   }
@@ -223,4 +284,3 @@ export class AuthService {
     });
   }
 }
-

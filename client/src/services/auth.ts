@@ -77,6 +77,15 @@ export const updatePassword = async (params: {
   return api.put('/auth/password', params);
 };
 
+export const updateDomainExpirySettings = async (params: {
+  displayMode?: 'date' | 'days';
+  thresholdDays?: number;
+  notifyEnabled?: boolean;
+  webhookUrl?: string | null;
+}): Promise<ApiResponse<{ user: User }>> => {
+  return api.put('/auth/domain-expiry-settings', params);
+};
+
 /**
  * 更新 Cloudflare API Token
  */
