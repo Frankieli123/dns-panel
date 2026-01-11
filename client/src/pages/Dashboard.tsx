@@ -284,6 +284,7 @@ export default function Dashboard() {
   }, [filteredDomains, page, rowsPerPage]);
 
   const expiryDisplayMode = getStoredUser()?.domainExpiryDisplayMode === 'days' ? 'days' : 'date';
+  const expiryLabel = expiryDisplayMode === 'date' ? '到期日期' : '剩余天数';
   const expiryLookupDomains = useMemo(
     () => Array.from(new Set(pagedDomains.map(d => d.name.toLowerCase()))),
     [pagedDomains]
@@ -465,7 +466,7 @@ export default function Dashboard() {
               <Stack direction="row" alignItems="center" spacing={0.5} sx={{ color: 'text.secondary', fontSize: '0.75rem', mt: 0.5 }}>
                 <EventIcon sx={{ fontSize: 14 }} />
                 <Typography variant="caption">
-                  到期: {formatExpiryValue(domain.name)}
+                  {expiryLabel}: {formatExpiryValue(domain.name)}
                 </Typography>
               </Stack>
             </CardContent>
@@ -493,7 +494,7 @@ export default function Dashboard() {
             {showAccountColumn && <TableCell>所属账户</TableCell>}
             <TableCell>状态</TableCell>
             <TableCell>最后更新</TableCell>
-            <TableCell>到期</TableCell>
+            <TableCell>{expiryLabel}</TableCell>
           </TableRow>
         </TableHead>
         <TableBody>
