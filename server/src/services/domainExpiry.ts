@@ -4,13 +4,14 @@ import { PrismaClient } from '@prisma/client';
 
 const prisma = new PrismaClient();
 
-type DomainExpirySource = 'rdap' | 'unknown';
+type DomainExpirySource = 'rdap' | 'whois' | 'unknown';
 
 export interface DomainExpiryResult {
   domain: string;
   expiresAt?: string; // ISO string (UTC)
   source: DomainExpirySource;
   checkedAt: string; // ISO string (UTC)
+  error?: string; // diagnostic message for missing expiresAt
 }
 
 const CACHE_KEY_PREFIX = 'domainExpiry:';
@@ -196,25 +197,28 @@ async function resolveWhoisServerForDomain(domain: string): Promise<string | und
   return undefined;
 }
 
-async function fetchWhoisExpiration(domain: string): Promise<string | undefined> {
+async function fetchWhoisExpiration(domain: string): Promise<{ expiresAt?: string; error?: string }> {
   const server = await resolveWhoisServerForDomain(domain);
-  if (!server) return undefined;
+  if (!server) return { error: 'whois: unable to resolve whois server' };
 
   try {
     const raw = await fetchWhoisRaw(server, domain);
     const expiresAt = parseWhoisExpirationDate(raw);
-    if (expiresAt) return expiresAt;
+    if (expiresAt) return { expiresAt };
 
     const referral = parseWhoisReferralServer(raw);
     if (referral && referral !== server) {
       const raw2 = await fetchWhoisRaw(referral, domain);
-      return parseWhoisExpirationDate(raw2);
+      const expiresAt2 = parseWhoisExpirationDate(raw2);
+      if (expiresAt2) return { expiresAt: expiresAt2 };
+      return { error: 'whois: expiration field not found (referral)' };
     }
-  } catch {
-    // ignore
+    return { error: 'whois: expiration field not found' };
+  } catch (err: any) {
+    return { error: `whois: ${err?.message ? String(err.message) : String(err)}` };
   }
 
-  return undefined;
+  return { error: 'whois: unknown error' };
 }
 
 async function fetchJson(url: string): Promise<any> {
@@ -311,11 +315,13 @@ export class DomainExpiryService {
         if (cached && cached.expiresAt.getTime() > now.getTime()) {
           try {
             const parsed = cached.value ? JSON.parse(cached.value) : {};
+            const parsedSource = parsed?.source;
             return {
               domain,
               expiresAt: typeof parsed?.expiresAt === 'string' ? parsed.expiresAt : undefined,
-              source: parsed?.source === 'rdap' ? 'rdap' : 'unknown',
+              source: parsedSource === 'rdap' || parsedSource === 'whois' ? parsedSource : 'unknown',
               checkedAt: typeof parsed?.checkedAt === 'string' ? parsed.checkedAt : cached.createdAt.toISOString(),
+              error: typeof parsed?.error === 'string' ? parsed.error : undefined,
             } satisfies DomainExpiryResult;
           } catch {
             // fall through and refresh
@@ -326,6 +332,7 @@ export class DomainExpiryService {
       const checkedAt = new Date().toISOString();
       let expiresAt: string | undefined;
       let source: DomainExpirySource = 'unknown';
+      let error: string | undefined;
 
       try {
         const rdap = await fetchJson(`https://rdap.org/domain/${encodeURIComponent(domain)}`);
@@ -333,19 +340,27 @@ export class DomainExpiryService {
         if (parsedExpiresAt) {
           expiresAt = parsedExpiresAt;
           source = 'rdap';
+        } else {
+          error = 'rdap: expiration event not found';
         }
-      } catch {
-        // keep unknown
+      } catch (err: any) {
+        error = `rdap: ${err?.message ? String(err.message) : String(err)}`;
       }
 
       if (!expiresAt) {
-        const whoisExpiresAt = await fetchWhoisExpiration(domain);
-        if (whoisExpiresAt) {
-          expiresAt = whoisExpiresAt;
+        const whois = await fetchWhoisExpiration(domain);
+        if (whois.expiresAt) {
+          expiresAt = whois.expiresAt;
+          source = 'whois';
+          error = undefined;
+        } else {
+          const rdapPart = error ? error : 'rdap: unknown';
+          const whoisPart = whois.error ? whois.error : 'whois: unknown';
+          error = `${rdapPart} | ${whoisPart}`;
         }
       }
 
-      const value: DomainExpiryResult = { domain, expiresAt, source, checkedAt };
+      const value: DomainExpiryResult = { domain, expiresAt, source, checkedAt, ...(error ? { error } : {}) };
       const ttlSeconds = ttlSecondsFor(expiresAt);
       const cacheExpiresAt = new Date(Date.now() + ttlSeconds * 1000);
 

@@ -10,7 +10,7 @@ node_modules/
 
 # Build output
 dist/
-
+.gemini
 # Logs
 *.log
 npm-debug.log*

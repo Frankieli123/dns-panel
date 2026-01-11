@@ -21,6 +21,16 @@ export const config = {
   // 加密配置
   encryptionKey: process.env.ENCRYPTION_KEY || 'default-32-character-key-here!',
 
+  // SMTP 配置（邮件通知）
+  smtp: {
+    host: process.env.SMTP_HOST || '',
+    port: parseInt(process.env.SMTP_PORT || '587', 10),
+    secure: String(process.env.SMTP_SECURE || '').toLowerCase() === 'true',
+    user: process.env.SMTP_USER || '',
+    pass: process.env.SMTP_PASS || '',
+    from: process.env.SMTP_FROM || '',
+  },
+
   // CORS 配置
   corsOrigin: process.env.CORS_ORIGIN || 'http://localhost:5173',
 

@@ -39,7 +39,8 @@ export type ResourceType =
   | 'HOSTNAME'
   | 'USER'
   | 'FALLBACK_ORIGIN'
-  | 'CREDENTIAL';
+  | 'CREDENTIAL'
+  | 'DOMAIN_EXPIRY';
 
 /**
  * 操作状态

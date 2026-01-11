@@ -6,6 +6,7 @@ import { ProviderRegistry } from '../providers/ProviderRegistry';
 import { dnsService, DnsServiceContext } from '../services/dns/DnsService';
 import { ProviderType, Zone } from '../providers/base/types';
 import { DomainExpiryService } from '../services/domainExpiry';
+import { sendDomainExpiryEmail } from '../services/email';
 
 const prisma = new PrismaClient();
 
@@ -16,6 +17,14 @@ function daysLeft(expiresAtIso: string): number {
   if (Number.isNaN(expiresAt.getTime())) return Number.NaN;
   const ms = expiresAt.getTime() - Date.now();
   return Math.floor(ms / 86_400_000);
+}
+
+function getLastNotifiedAt(existing: any): Date | undefined {
+  const ln = existing?.lastNotifiedAt;
+  if (ln instanceof Date && !Number.isNaN(ln.getTime())) return ln;
+  const ca = existing?.createdAt;
+  if (ca instanceof Date && !Number.isNaN(ca.getTime())) return ca;
+  return undefined;
 }
 
 async function listAllZones(ctx: DnsServiceContext): Promise<Zone[]> {
@@ -85,9 +94,18 @@ async function runOnce(): Promise<void> {
       select: {
         id: true,
         username: true,
+        email: true,
         domainExpiryThresholdDays: true,
         domainExpiryNotifyEnabled: true,
         domainExpiryNotifyWebhookUrl: true,
+        domainExpiryNotifyEmailEnabled: true,
+        domainExpiryNotifyEmailTo: true,
+        smtpHost: true,
+        smtpPort: true,
+        smtpSecure: true,
+        smtpUser: true,
+        smtpPass: true,
+        smtpFrom: true,
       },
     });
 
@@ -96,8 +114,41 @@ async function runOnce(): Promise<void> {
         ? Math.max(1, Math.min(365, user.domainExpiryThresholdDays))
         : 7;
 
-      const notifyEnabled = !!user.domainExpiryNotifyEnabled;
       const webhookUrl = typeof user.domainExpiryNotifyWebhookUrl === 'string' ? user.domainExpiryNotifyWebhookUrl.trim() : '';
+      const webhookEnabled = !!user.domainExpiryNotifyEnabled && !!webhookUrl;
+
+      const emailEnabled = !!(user as any).domainExpiryNotifyEmailEnabled;
+      const emailToCandidate = (user as any).domainExpiryNotifyEmailTo ?? user.email ?? '';
+      const emailTo = typeof emailToCandidate === 'string' ? String(emailToCandidate).trim() : '';
+      const emailChannelEnabled = emailEnabled && !!emailTo;
+
+      const smtpHost = typeof (user as any).smtpHost === 'string' ? String((user as any).smtpHost).trim() : '';
+      const smtpPortCandidate = (user as any).smtpPort;
+      const smtpPort = Number.isFinite(Number(smtpPortCandidate)) ? Number(smtpPortCandidate) : undefined;
+      const smtpSecureCandidate = (user as any).smtpSecure;
+      const smtpSecure = typeof smtpSecureCandidate === 'boolean' ? smtpSecureCandidate : undefined;
+      const smtpUser = typeof (user as any).smtpUser === 'string' ? String((user as any).smtpUser).trim() : '';
+      const smtpFrom = typeof (user as any).smtpFrom === 'string' ? String((user as any).smtpFrom).trim() : '';
+      const smtpPassEncrypted = typeof (user as any).smtpPass === 'string' ? String((user as any).smtpPass) : '';
+      let smtpPass = '';
+      if (smtpHost && smtpPassEncrypted) {
+        try {
+          smtpPass = decrypt(smtpPassEncrypted);
+        } catch {
+          smtpPass = '';
+        }
+      }
+
+      const smtpOverride = smtpHost
+        ? {
+            host: smtpHost,
+            port: smtpPort ?? 587,
+            secure: smtpSecure ?? false,
+            user: smtpUser,
+            pass: smtpPass,
+            from: smtpFrom,
+          }
+        : null;
 
       const creds = await prisma.dnsCredential.findMany({
         where: { userId: user.id },
@@ -146,7 +197,7 @@ async function runOnce(): Promise<void> {
 
       const expiryResults = await DomainExpiryService.lookupDomains(domains, { concurrency: 3 });
 
-      if (!notifyEnabled || !webhookUrl) continue;
+      if (!webhookEnabled && !emailChannelEnabled) continue;
 
       const domainsInThreshold = expiryResults
         .filter(r => typeof r?.expiresAt === 'string')
@@ -169,6 +220,62 @@ async function runOnce(): Promise<void> {
         });
       }
 
+      {
+        const now = new Date();
+        const prefix = `domainExpiryFailureLog:${user.id}:`;
+        const existing = await prisma.cache.findMany({
+          where: {
+            key: { startsWith: prefix },
+            expiresAt: { gt: now },
+          },
+          select: { key: true },
+        });
+        const loggedDomains = new Set(existing.map(r => r.key.slice(prefix.length)));
+
+        const ttlMs = 7 * DAY_MS;
+        for (const info of notifyResults) {
+          if (info.expiresAt) continue;
+          const domain = typeof info.domain === 'string' ? info.domain : '';
+          if (!domain) continue;
+          if (loggedDomains.has(domain)) continue;
+
+          const err = typeof info.error === 'string' ? info.error.trim() : '';
+          if (!err) continue;
+
+          loggedDomains.add(domain);
+          const cacheKey = `${prefix}${domain}`;
+          const cacheExpiresAt = new Date(Date.now() + ttlMs);
+
+          const value = JSON.stringify({ domain, error: err, checkedAt: info.checkedAt });
+          await prisma.cache.upsert({
+            where: { key: cacheKey },
+            create: {
+              key: cacheKey,
+              value,
+              expiresAt: cacheExpiresAt,
+            },
+            update: {
+              value,
+              expiresAt: cacheExpiresAt,
+            },
+          });
+
+          const logValue = JSON.stringify({ action: 'domain_expiry_lookup_failed', domain, error: err, checkedAt: info.checkedAt });
+          await prisma.log.create({
+            data: {
+              userId: user.id,
+              action: 'UPDATE',
+              resourceType: 'DOMAIN_EXPIRY',
+              domain,
+              recordName: domain,
+              status: 'FAILED',
+              errorMessage: err,
+              newValue: logValue,
+            },
+          });
+        }
+      }
+
       for (const info of notifyResults) {
         if (!info.expiresAt) continue;
         const dLeft = daysLeft(info.expiresAt);
@@ -177,24 +284,6 @@ async function runOnce(): Promise<void> {
 
         const expiresAtDate = new Date(info.expiresAt);
         if (Number.isNaN(expiresAtDate.getTime())) continue;
-
-        const channel = 'webhook';
-        const where = {
-          userId_domain_expiresAt_thresholdDays_channel: {
-            userId: user.id,
-            domain: info.domain,
-            expiresAt: expiresAtDate,
-            thresholdDays,
-            channel,
-          },
-        } as const;
-
-        const existing = await prisma.domainExpiryNotification.findUnique({
-          where: where.userId_domain_expiresAt_thresholdDays_channel as any,
-          select: { status: true, createdAt: true },
-        } as any);
-
-        if (existing && Date.now() - existing.createdAt.getTime() < DAY_MS) continue;
 
         const accounts = domainAccounts.get(info.domain) || [];
         const payload = {
@@ -208,50 +297,147 @@ async function runOnce(): Promise<void> {
           checkedAt: info.checkedAt,
         };
 
-        try {
-          const resp = await postJson(webhookUrl, payload);
-          if (resp.status < 200 || resp.status >= 300) {
-            throw new Error(`Webhook HTTP ${resp.status}`);
-          }
+        if (webhookEnabled) {
+          const channel = 'webhook';
+          const where = {
+            userId_domain_expiresAt_thresholdDays_channel: {
+              userId: user.id,
+              domain: info.domain,
+              expiresAt: expiresAtDate,
+              thresholdDays,
+              channel,
+            },
+          } as const;
 
-          await prisma.domainExpiryNotification.upsert({
+          const existing = await prisma.domainExpiryNotification.findUnique({
             where: where.userId_domain_expiresAt_thresholdDays_channel as any,
-            create: {
+            select: { status: true, createdAt: true, lastNotifiedAt: true },
+          } as any);
+
+          const ls = getLastNotifiedAt(existing);
+          if (ls && Date.now() - ls.getTime() < DAY_MS) {
+            // already notified within 24h for this channel
+          } else {
+            try {
+              const resp = await postJson(webhookUrl, payload);
+              if (resp.status < 200 || resp.status >= 300) {
+                throw new Error(`Webhook HTTP ${resp.status}`);
+              }
+
+              await prisma.domainExpiryNotification.upsert({
+                where: where.userId_domain_expiresAt_thresholdDays_channel as any,
+                create: {
+                  userId: user.id,
+                  domain: info.domain,
+                  expiresAt: expiresAtDate,
+                  thresholdDays,
+                  channel,
+                  status: 'SENT',
+                  payload: JSON.stringify(payload),
+                  lastNotifiedAt: new Date(),
+                },
+                update: {
+                  status: 'SENT',
+                  payload: JSON.stringify(payload),
+                  errorMessage: null,
+                  lastNotifiedAt: new Date(),
+                },
+              } as any);
+            } catch (err: any) {
+              await prisma.domainExpiryNotification.upsert({
+                where: where.userId_domain_expiresAt_thresholdDays_channel as any,
+                create: {
+                  userId: user.id,
+                  domain: info.domain,
+                  expiresAt: expiresAtDate,
+                  thresholdDays,
+                  channel,
+                  status: 'FAILED',
+                  payload: JSON.stringify(payload),
+                  errorMessage: err?.message ? String(err.message) : String(err),
+                  lastNotifiedAt: new Date(),
+                },
+                update: {
+                  status: 'FAILED',
+                  payload: JSON.stringify(payload),
+                  errorMessage: err?.message ? String(err.message) : String(err),
+                  lastNotifiedAt: new Date(),
+                },
+              } as any);
+            }
+          }
+        }
+
+        if (emailChannelEnabled) {
+          const channel = 'email';
+          const where = {
+            userId_domain_expiresAt_thresholdDays_channel: {
               userId: user.id,
               domain: info.domain,
               expiresAt: expiresAtDate,
               thresholdDays,
               channel,
-              status: 'SENT',
-              payload: JSON.stringify(payload),
             },
-            update: {
-              status: 'SENT',
-              payload: JSON.stringify(payload),
-              errorMessage: null,
-              createdAt: new Date(),
-            },
-          } as any);
-        } catch (err: any) {
-          await prisma.domainExpiryNotification.upsert({
+          } as const;
+
+          const existing = await prisma.domainExpiryNotification.findUnique({
             where: where.userId_domain_expiresAt_thresholdDays_channel as any,
-            create: {
-              userId: user.id,
-              domain: info.domain,
-              expiresAt: expiresAtDate,
-              thresholdDays,
-              channel,
-              status: 'FAILED',
-              payload: JSON.stringify(payload),
-              errorMessage: err?.message ? String(err.message) : String(err),
-            },
-            update: {
-              status: 'FAILED',
-              payload: JSON.stringify(payload),
-              errorMessage: err?.message ? String(err.message) : String(err),
-              createdAt: new Date(),
-            },
+            select: { status: true, createdAt: true, lastNotifiedAt: true },
           } as any);
+
+          const ls = getLastNotifiedAt(existing);
+          if (ls && Date.now() - ls.getTime() < DAY_MS) {
+            // already notified within 24h for this channel
+          } else {
+            try {
+              await sendDomainExpiryEmail({
+                to: emailTo,
+                payload,
+                smtp: smtpOverride,
+              });
+
+              await prisma.domainExpiryNotification.upsert({
+                where: where.userId_domain_expiresAt_thresholdDays_channel as any,
+                create: {
+                  userId: user.id,
+                  domain: info.domain,
+                  expiresAt: expiresAtDate,
+                  thresholdDays,
+                  channel,
+                  status: 'SENT',
+                  payload: JSON.stringify(payload),
+                  lastNotifiedAt: new Date(),
+                },
+                update: {
+                  status: 'SENT',
+                  payload: JSON.stringify(payload),
+                  errorMessage: null,
+                  lastNotifiedAt: new Date(),
+                },
+              } as any);
+            } catch (err: any) {
+              await prisma.domainExpiryNotification.upsert({
+                where: where.userId_domain_expiresAt_thresholdDays_channel as any,
+                create: {
+                  userId: user.id,
+                  domain: info.domain,
+                  expiresAt: expiresAtDate,
+                  thresholdDays,
+                  channel,
+                  status: 'FAILED',
+                  payload: JSON.stringify(payload),
+                  errorMessage: err?.message ? String(err.message) : String(err),
+                  lastNotifiedAt: new Date(),
+                },
+                update: {
+                  status: 'FAILED',
+                  payload: JSON.stringify(payload),
+                  errorMessage: err?.message ? String(err.message) : String(err),
+                  lastNotifiedAt: new Date(),
+                },
+              } as any);
+            }
+          }
         }
       }
     }

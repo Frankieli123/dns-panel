@@ -10,6 +10,14 @@ export interface User {
   domainExpiryThresholdDays?: number;
   domainExpiryNotifyEnabled?: boolean;
   domainExpiryNotifyWebhookUrl?: string | null;
+  domainExpiryNotifyEmailEnabled?: boolean;
+  domainExpiryNotifyEmailTo?: string | null;
+  smtpHost?: string | null;
+  smtpPort?: number | null;
+  smtpSecure?: boolean | null;
+  smtpUser?: string | null;
+  smtpFrom?: string | null;
+  smtpPassConfigured?: boolean;
   createdAt: string;
   updatedAt: string;
 }

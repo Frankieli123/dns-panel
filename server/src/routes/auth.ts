@@ -231,7 +231,20 @@ router.get('/me', authenticateToken, async (req: AuthRequest, res) => {
  */
 router.put('/domain-expiry-settings', authenticateToken, async (req: AuthRequest, res) => {
   try {
-    const { displayMode, thresholdDays, notifyEnabled, webhookUrl } = req.body || {};
+    const {
+      displayMode,
+      thresholdDays,
+      notifyEnabled,
+      webhookUrl,
+      notifyEmailEnabled,
+      emailTo,
+      smtpHost,
+      smtpPort,
+      smtpSecure,
+      smtpUser,
+      smtpPass,
+      smtpFrom,
+    } = req.body || {};
 
     if (displayMode !== undefined && displayMode !== 'date' && displayMode !== 'days') {
       return errorResponse(res, 'displayMode 仅支持 date 或 days', 400);
@@ -242,6 +255,14 @@ router.put('/domain-expiry-settings', authenticateToken, async (req: AuthRequest
       thresholdDays,
       notifyEnabled,
       webhookUrl,
+      notifyEmailEnabled,
+      emailTo,
+      smtpHost,
+      smtpPort,
+      smtpSecure,
+      smtpUser,
+      smtpPass,
+      smtpFrom,
     });
 
     await LoggerService.createLog({
@@ -257,6 +278,14 @@ router.put('/domain-expiry-settings', authenticateToken, async (req: AuthRequest
         thresholdDays: user.domainExpiryThresholdDays,
         notifyEnabled: user.domainExpiryNotifyEnabled,
         webhookUrl: user.domainExpiryNotifyWebhookUrl ? 'set' : null,
+        notifyEmailEnabled: (user as any).domainExpiryNotifyEmailEnabled ?? false,
+        emailTo: (user as any).domainExpiryNotifyEmailTo ? 'set' : null,
+        smtpHost: (user as any).smtpHost ? 'set' : null,
+        smtpPort: (user as any).smtpPort ?? null,
+        smtpSecure: (user as any).smtpSecure ?? null,
+        smtpUser: (user as any).smtpUser ? 'set' : null,
+        smtpFrom: (user as any).smtpFrom ? 'set' : null,
+        smtpPassConfigured: (user as any).smtpPassConfigured ?? false,
       }),
     });
 

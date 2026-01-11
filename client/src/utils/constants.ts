@@ -48,6 +48,7 @@ export const RESOURCE_TYPES = {
   HOSTNAME: '自定义主机名',
   USER: '用户',
   CREDENTIAL: '供应商账户',
+  DOMAIN_EXPIRY: '域名到期',
 };
 
 /**

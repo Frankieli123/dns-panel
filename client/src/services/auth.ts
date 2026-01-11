@@ -82,6 +82,14 @@ export const updateDomainExpirySettings = async (params: {
   thresholdDays?: number;
   notifyEnabled?: boolean;
   webhookUrl?: string | null;
+  notifyEmailEnabled?: boolean;
+  emailTo?: string | null;
+  smtpHost?: string | null;
+  smtpPort?: number | null;
+  smtpSecure?: boolean | null;
+  smtpUser?: string | null;
+  smtpPass?: string | null;
+  smtpFrom?: string | null;
 }): Promise<ApiResponse<{ user: User }>> => {
   return api.put('/auth/domain-expiry-settings', params);
 };

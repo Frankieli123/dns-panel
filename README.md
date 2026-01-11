@@ -224,6 +224,14 @@ npm run dev
 | `JWT_EXPIRES_IN` | `7d` | JWT 过期时间 |
 | `LOG_RETENTION_DAYS` | `90` | 日志保留天数 |
 | `DATABASE_URL` | - | SQLite 连接串 |
+| `SMTP_HOST` | - | SMTP 主机（未在设置中配置 SMTP 时必填） |
+| `SMTP_PORT` | `587` | SMTP 端口 |
+| `SMTP_SECURE` | `false` | 是否使用 SMTPS（465） |
+| `SMTP_USER` | - | SMTP 用户名（可选） |
+| `SMTP_PASS` | - | SMTP 密码（可选） |
+| `SMTP_FROM` | - | 发件人（如 `DNS Panel <no-reply@example.com>`） |
+
+> 邮件通知：也可以在「设置」里配置 SMTP；未配置时会使用环境变量 `SMTP_*`。
 
 ---
 

@@ -24,6 +24,14 @@ model User {
   domainExpiryThresholdDays Int      @default(7)
   domainExpiryNotifyEnabled Boolean  @default(false)
   domainExpiryNotifyWebhookUrl String?
+  domainExpiryNotifyEmailEnabled Boolean @default(false)
+  domainExpiryNotifyEmailTo      String?
+  smtpHost          String?
+  smtpPort          Int?
+  smtpSecure        Boolean?
+  smtpUser          String?
+  smtpPass          String?  // AES-256 加密
+  smtpFrom          String?
   createdAt         DateTime @default(now())
   updatedAt         DateTime @updatedAt
 
@@ -122,6 +130,7 @@ model DomainExpiryNotification {
   payload       String?  // JSON
   errorMessage  String?
   createdAt     DateTime @default(now())
+  lastNotifiedAt DateTime?
 
   @@unique([userId, domain, expiresAt, thresholdDays, channel])
   @@index([userId])
