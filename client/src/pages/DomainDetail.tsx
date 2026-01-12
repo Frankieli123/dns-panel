@@ -59,9 +59,9 @@ export default function DomainDetail() {
     : (typeof selectedCredentialId === 'number' ? selectedCredentialId : undefined);
   const missingCredentialContext = selectedCredentialId === 'all' && typeof credFromQuery !== 'number';
   const queriesEnabled = !!zoneId && !missingCredentialContext;
-  const credentialProvider = credentialId
+  const credentialProvider = (credentialId
     ? credentials.find(c => c.id === credentialId)?.provider
-    : selectedProvider;
+    : selectedProvider) ?? undefined;
   const capabilities = getProviderCapabilities(credentialProvider);
   const supportsCustomHostnames = credentialProvider === 'cloudflare';
   const supportsLine = capabilities?.supportsLine ?? false;
@@ -279,6 +279,7 @@ export default function DomainDetail() {
             loading={createMutation.isPending}
             lines={lines}
             minTTL={minTTL}
+            providerType={credentialProvider}
           />
         </DialogContent>
         <DialogActions sx={{ px: 3, pb: 3 }}>

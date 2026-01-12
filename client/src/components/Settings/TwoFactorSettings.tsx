@@ -14,6 +14,8 @@ import {
   Chip,
   InputAdornment,
   IconButton,
+  useMediaQuery,
+  useTheme,
 } from '@mui/material';
 import {
   Security as SecurityIcon,
@@ -26,6 +28,8 @@ import {
 import { get2FAStatus, setup2FA, enable2FA, disable2FA } from '@/services/auth';
 
 export default function TwoFactorSettings() {
+  const theme = useTheme();
+  const isMobile = useMediaQuery(theme.breakpoints.down('sm'));
   const [enabled, setEnabled] = useState(false);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState('');
@@ -217,6 +221,7 @@ export default function TwoFactorSettings() {
         onClose={handleCloseSetupDialog}
         maxWidth="sm"
         fullWidth
+        fullScreen={isMobile}
       >
         <DialogTitle>
           <Box sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
@@ -353,6 +358,7 @@ export default function TwoFactorSettings() {
         onClose={handleCloseDisableDialog}
         maxWidth="xs"
         fullWidth
+        fullScreen={isMobile}
       >
         <DialogTitle>
           <Box sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>

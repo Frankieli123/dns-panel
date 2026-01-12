@@ -13,13 +13,14 @@ import {
 import { TTL_OPTIONS } from '@/utils/constants';
 import { validateDNSContent } from '@/utils/validators';
 import { useProvider } from '@/contexts/ProviderContext';
-import { ProviderCapabilities, DnsLine } from '@/types/dns';
+import { ProviderCapabilities, DnsLine, ProviderType } from '@/types/dns';
 
 interface QuickAddFormProps {
   onSubmit: (data: any) => void;
   loading?: boolean;
   lines?: DnsLine[];
   minTTL?: number;
+  providerType?: ProviderType;
 }
 
 interface FormData {
@@ -38,8 +39,8 @@ interface FormData {
  * 快速添加 DNS 记录表单
  * 根据当前供应商能力动态显示字段
  */
-export default function QuickAddForm({ onSubmit, loading, lines = [], minTTL }: QuickAddFormProps) {
-  const { selectedProvider, currentCapabilities } = useProvider();
+export default function QuickAddForm({ onSubmit, loading, lines = [], minTTL, providerType }: QuickAddFormProps) {
+  const { selectedProvider, currentCapabilities, getProviderCapabilities } = useProvider();
 
   const {
     register,
@@ -64,8 +65,11 @@ export default function QuickAddForm({ onSubmit, loading, lines = [], minTTL }: 
   const currentTtl = watch('ttl');
   const showPriority = recordType === 'MX' || recordType === 'SRV';
 
+  const effectiveProviderType = providerType || selectedProvider;
+  const effectiveCapabilities = getProviderCapabilities(effectiveProviderType) || currentCapabilities;
+
   // 根据供应商能力决定显示哪些字段
-  const caps: ProviderCapabilities = currentCapabilities || {
+  const caps: ProviderCapabilities = effectiveCapabilities || {
     supportsWeight: false,
     supportsLine: false,
     supportsStatus: false,
@@ -78,16 +82,16 @@ export default function QuickAddForm({ onSubmit, loading, lines = [], minTTL }: 
     recordTypes: ['A', 'AAAA', 'CNAME', 'MX', 'TXT', 'SRV', 'CAA', 'NS'],
   };
 
-  const showProxied = selectedProvider === 'cloudflare';
+  const showProxied = effectiveProviderType === 'cloudflare';
   const showWeight = caps.supportsWeight;
   const showLine = caps.supportsLine && lines.length > 0;
   const showRemark = caps.supportsRemark;
   const recordTypes = caps.recordTypes;
 
   const ttlOptions = TTL_OPTIONS.filter((o) => {
-    if (selectedProvider !== 'cloudflare' && o.value === 1) return false;
+    if (effectiveProviderType !== 'cloudflare' && o.value === 1) return false;
     if (typeof minTTL === 'number' && Number.isFinite(minTTL) && minTTL > 0) {
-      if (selectedProvider === 'cloudflare' && o.value === 1) return true;
+      if (effectiveProviderType === 'cloudflare' && o.value === 1) return true;
       return o.value >= minTTL;
     }
     return true;
@@ -97,7 +101,7 @@ export default function QuickAddForm({ onSubmit, loading, lines = [], minTTL }: 
     ? ttlOptions
     : (typeof minTTL === 'number' && Number.isFinite(minTTL) && minTTL > 0
         ? [{ label: `${minTTL} 秒`, value: minTTL }]
-        : TTL_OPTIONS.filter(o => (selectedProvider === 'cloudflare' ? true : o.value !== 1)));
+        : TTL_OPTIONS.filter(o => (effectiveProviderType === 'cloudflare' ? true : o.value !== 1)));
 
   useEffect(() => {
     const firstAllowedTtl = safeTtlOptions[0]?.value ?? TTL_OPTIONS[0].value;

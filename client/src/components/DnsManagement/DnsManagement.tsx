@@ -244,6 +244,7 @@ export default function DnsManagement({ zoneId, credentialId }: DnsManagementPro
                 loading={createMutation.isPending}
                 lines={lines}
                 minTTL={minTTL}
+                providerType={credentialProvider}
               />
             </DialogContent>
             <DialogActions sx={{ px: 3, pb: 3 }}>

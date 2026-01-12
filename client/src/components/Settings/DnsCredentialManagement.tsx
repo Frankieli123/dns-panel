@@ -18,7 +18,9 @@ import {
   Alert,
   Stack,
   CircularProgress,
-  Tooltip
+  Tooltip,
+  useMediaQuery,
+  useTheme
 } from '@mui/material';
 import {
   Add as AddIcon,
@@ -184,6 +186,8 @@ interface CredentialFormInputs {
 }
 
 export default function DnsCredentialManagement() {
+  const theme = useTheme();
+  const isMobile = useMediaQuery(theme.breakpoints.down('sm'));
   const { refreshData: refreshProviderData } = useProvider();
   const [credentials, setCredentials] = useState<DnsCredential[]>([]);
   const [providers, setProviders] = useState<ProviderConfig[]>([]);
@@ -475,7 +479,7 @@ export default function DnsCredentialManagement() {
       </CardContent>
 
       {/* 新增/编辑对话框 */}
-      <Dialog open={dialogOpen} onClose={handleCloseDialog} maxWidth="md" fullWidth>
+      <Dialog open={dialogOpen} onClose={handleCloseDialog} maxWidth="md" fullWidth fullScreen={isMobile}>
         <DialogTitle>{editingCredential ? '编辑账户' : '新增账户'}</DialogTitle>
         <form onSubmit={handleSubmit(onSubmit)}>
           <DialogContent>
@@ -600,7 +604,7 @@ export default function DnsCredentialManagement() {
       </Dialog>
 
       {/* 删除确认对话框 */}
-      <Dialog open={deleteDialogOpen} onClose={() => setDeleteDialogOpen(false)}>
+      <Dialog open={deleteDialogOpen} onClose={() => setDeleteDialogOpen(false)} fullScreen={isMobile}>
         <DialogTitle>确认删除</DialogTitle>
         <DialogContent>
           <Typography>
