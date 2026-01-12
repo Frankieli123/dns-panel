@@ -95,7 +95,14 @@ export default function Dashboard() {
   const isAllScope = new URLSearchParams(location.search).get('scope') === 'all';
   const [allScopeCredentialId, setAllScopeCredentialId] = useState<number | 'all'>('all');
 
-  const { selectedCredentialId, selectedProvider, credentials, getCredentialsByProvider } = useProvider();
+  const { selectedCredentialId, selectedProvider, credentials, getCredentialsByProvider, selectProvider } = useProvider();
+
+  useEffect(() => {
+    if (!isAllScope) return;
+    if (selectedProvider !== null) {
+      selectProvider(null);
+    }
+  }, [isAllScope, selectedProvider, selectProvider]);
 
   useEffect(() => {
     const raw = localStorage.getItem(DOMAINS_PER_PAGE_STORAGE_KEY);

@@ -85,6 +85,16 @@ export class CloudflareProvider extends BaseProvider {
     return this.createError(code, message, { cause: err });
   }
 
+  private normalizeTxtValueForWrite(type: string, value: string): string {
+    if (String(type).toUpperCase() !== 'TXT') return value;
+    const raw = String(value ?? '');
+    const trimmed = raw.trim();
+    if (!trimmed) return raw;
+    if (trimmed.startsWith('"') && trimmed.endsWith('"')) return trimmed;
+    if (trimmed.includes('"')) return trimmed;
+    return `"${trimmed}"`;
+  }
+
   /**
    * 验证认证信息（使用轻量级 Token 验证，不需要 Zone:Read 权限）
    */
@@ -199,12 +209,13 @@ export class CloudflareProvider extends BaseProvider {
       // 只有 A/AAAA/CNAME 支持代理
       const supportsProxied = ['A', 'AAAA', 'CNAME'].includes(params.type.toUpperCase());
       const proxied = supportsProxied ? params.proxied : undefined;
+      const normalizedValue = this.normalizeTxtValueForWrite(params.type, params.value);
 
       const created = await this.withRetry(() =>
         this.service.createDNSRecord(zoneId, {
           type: params.type,
           name: params.name,
-          content: params.value,
+          content: normalizedValue,
           ttl: params.ttl,
           proxied,
           priority: params.priority,
@@ -237,12 +248,13 @@ export class CloudflareProvider extends BaseProvider {
 
       const supportsProxied = ['A', 'AAAA', 'CNAME'].includes(params.type.toUpperCase());
       const proxied = supportsProxied ? params.proxied : undefined;
+      const normalizedValue = this.normalizeTxtValueForWrite(params.type, params.value);
 
       const updated = await this.withRetry(() =>
         this.service.updateDNSRecord(zoneId, recordId, {
           type: params.type,
           name: params.name,
-          content: params.value,
+          content: normalizedValue,
           ttl: params.ttl,
           proxied,
           priority: params.priority,

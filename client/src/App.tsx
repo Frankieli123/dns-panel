@@ -53,7 +53,7 @@ function App() {
       </Route>
 
       {/* 404 重定向 */}
-      <Route path="*" element={<Navigate to="/" replace />} />
+      <Route path="*" element={<Navigate to="/?scope=all" replace />} />
     </Routes>
   );
 }

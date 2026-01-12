@@ -72,7 +72,7 @@ export default function Login() {
 
       if (response.data.token && response.data.user) {
         saveAuthData(response.data.token, response.data.user);
-        navigate('/');
+        navigate('/?scope=all');
       }
     } catch (err: any) {
       setError(err || '登录失败，请重试');
@@ -93,7 +93,7 @@ export default function Login() {
 
       if (response.data.token && response.data.user) {
         saveAuthData(response.data.token, response.data.user);
-        navigate('/');
+        navigate('/?scope=all');
       }
     } catch (err: any) {
       setError(err || '验证码错误，请重试');
