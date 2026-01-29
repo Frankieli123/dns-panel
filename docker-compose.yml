@@ -1,0 +1,32 @@
+version: '3.8'
+
+services:
+  dns-panel:
+    build: .
+    container_name: dns-panel
+    restart: unless-stopped
+    ports:
+      - "3000:3000"
+    environment:
+      # 🔴 必须设置的环境变量（生产环境）
+      - JWT_SECRET=${JWT_SECRET:-please-change-this-to-a-random-secret-min-32-chars}
+      - ENCRYPTION_KEY=${ENCRYPTION_KEY:-please-change-to-32-char-key!!}
+
+      # 🟡 建议设置的环境变量
+      - DATABASE_URL=file:/app/data/database.db
+      - CORS_ORIGIN=${CORS_ORIGIN:-http://localhost:3000}
+
+      # 🟢 可选的环境变量
+      - NODE_ENV=production
+      - PORT=3000
+      - JWT_EXPIRES_IN=7d
+      - LOG_RETENTION_DAYS=90
+    volumes:
+      # 持久化数据库文件
+      - ./data:/app/data
+    healthcheck:
+      test: ["CMD", "wget", "--quiet", "--tries=1", "--spider", "http://localhost:3000/health"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 40s

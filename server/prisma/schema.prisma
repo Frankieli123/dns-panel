@@ -1,0 +1,140 @@
+// Prisma Schema for Cloudflare DNS Manager
+
+generator client {
+  provider      = "prisma-client-js"
+  binaryTargets = ["native", "linux-musl-openssl-3.0.x"]
+}
+
+datasource db {
+  provider = "sqlite"
+  url      = env("DATABASE_URL")
+}
+
+// 用户表
+model User {
+  id                Int      @id @default(autoincrement())
+  username          String   @unique
+  email             String?  @unique
+  password          String   // bcrypt 加密
+  cfApiToken        String?  // Cloudflare API Token (AES-256 加密) - 保留用于迁移
+  cfAccountId       String?  // Cloudflare Account ID (可选) - 保留用于迁移
+  twoFactorSecret   String?  // TOTP 2FA 密钥 (AES-256 加密)
+  twoFactorEnabled  Boolean  @default(false) // 是否启用 2FA
+  domainExpiryDisplayMode   String   @default("date") // date | days
+  domainExpiryThresholdDays Int      @default(7)
+  domainExpiryNotifyEnabled Boolean  @default(false)
+  domainExpiryNotifyWebhookUrl String?
+  domainExpiryNotifyEmailEnabled Boolean @default(false)
+  domainExpiryNotifyEmailTo      String?
+  smtpHost          String?
+  smtpPort          Int?
+  smtpSecure        Boolean?
+  smtpUser          String?
+  smtpPass          String?  // AES-256 加密
+  smtpFrom          String?
+  createdAt         DateTime @default(now())
+  updatedAt         DateTime @updatedAt
+
+  // 关联
+  logs              Log[]
+  dnsCredentials    DnsCredential[]
+  cfCredentials     CfCredential[]    @relation("CfCredentials") // 废弃，仅用于迁移
+  domainExpiryNotifications DomainExpiryNotification[]
+
+  @@map("users")
+}
+
+// DNS 凭证表（多提供商、多账户支持）
+model DnsCredential {
+  id          Int      @id @default(autoincrement())
+  userId      Int
+  user        User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  name        String   // 账户别名，如"个人账户"、"公司账户"
+  provider    String   // 提供商类型: cloudflare, aliyun, dnspod, huawei, etc.
+  secrets     String   // JSON格式的认证信息 (AES-256 加密)
+                       // Cloudflare: {"apiToken": "..."}
+                       // Aliyun: {"accessKeyId": "...", "accessKeySecret": "..."}
+                       // DNSPod: {"secretId": "...", "secretKey": "..."}
+  accountId   String?  // 提供商账户ID (可选)
+  isDefault   Boolean  @default(false) // 是否为默认账户
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  @@index([userId])
+  @@index([provider])
+  @@map("dns_credentials")
+}
+
+// [已废弃] Cloudflare 凭证表 - 保留用于数据迁移
+model CfCredential {
+  id          Int      @id @default(autoincrement())
+  userId      Int
+  user        User     @relation("CfCredentials", fields: [userId], references: [id], onDelete: Cascade)
+  name        String
+  apiToken    String
+  accountId   String?
+  isDefault   Boolean  @default(false)
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  @@index([userId])
+  @@map("cf_credentials")
+}
+
+// 操作日志表
+model Log {
+  id            Int      @id @default(autoincrement())
+  userId        Int
+  user          User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  timestamp     DateTime @default(now())
+  action        String   // CREATE, UPDATE, DELETE
+  resourceType  String   // DNS, ZONE, HOSTNAME, USER
+  domain        String?
+  recordName    String?
+  recordType    String?  // A, AAAA, CNAME, MX, TXT, etc.
+  oldValue      String?  // JSON 格式
+  newValue      String?  // JSON 格式
+  status        String   // SUCCESS, FAILED
+  errorMessage  String?
+  ipAddress     String?  // 操作者 IP 地址
+
+  @@index([userId])
+  @@index([timestamp])
+  @@index([action])
+  @@index([resourceType])
+  @@index([status])
+  @@map("logs")
+}
+
+// 缓存表（可选，用于减少 API 调用）
+model Cache {
+  id        Int      @id @default(autoincrement())
+  key       String   @unique
+  value     String   // JSON 格式
+  expiresAt DateTime
+  createdAt DateTime @default(now())
+
+  @@index([expiresAt])
+  @@map("cache")
+}
+
+model DomainExpiryNotification {
+  id            Int      @id @default(autoincrement())
+  userId        Int
+  user          User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  domain        String
+  expiresAt     DateTime
+  thresholdDays Int
+  channel       String   // webhook
+  status        String   // SENT | FAILED
+  payload       String?  // JSON
+  errorMessage  String?
+  createdAt     DateTime @default(now())
+  lastNotifiedAt DateTime?
+
+  @@unique([userId, domain, expiresAt, thresholdDays, channel])
+  @@index([userId])
+  @@index([domain])
+  @@index([createdAt])
+  @@map("domain_expiry_notifications")
+}

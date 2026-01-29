@@ -1,0 +1,25 @@
+{
+  "permissions": {
+    "allow": [
+      "Bash(npx prisma generate:*)",
+      "Bash(npx prisma migrate:*)",
+      "Bash(npm run dev:*)",
+      "Bash(netstat:*)",
+      "Bash(findstr:*)",
+      "Bash(taskkill:*)",
+      "Bash(powershell -Command \"Stop-Process -Id 67880 -Force\")",
+      "Bash(dir /s /b node_modulescloudflare*.d.ts)",
+      "Bash(npm run build:*)",
+      "Bash(cat:*)",
+      "Bash(npx ts-node:*)",
+      "Bash(powershell:*)",
+      "Bash(curl:*)",
+      "Bash(dir /b /s *.config.*)",
+      "Bash(dir:*)",
+      "Bash(ls -la \"e:\\APP\\CF\\app\\lib\\dns\"\" 2>/dev/null || echo \"Directory check \")",
+      "Bash(find:*)",
+      "Bash(npx tsc --noEmit)",
+      "mcp__serena__write_memory"
+    ]
+  }
+}
