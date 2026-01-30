@@ -29,6 +29,7 @@ import {
 import {
   Search as SearchIcon,
   Refresh as RefreshIcon,
+  Add as AddIcon,
   Dns as DnsIcon,
   CheckCircle as ActiveIcon,
   Pending as PendingIcon,
@@ -61,6 +62,7 @@ import { Domain } from '@/types';
 import { ProviderType } from '@/types/dns';
 import DnsManagement from '@/components/DnsManagement/DnsManagement';
 import ProviderAccountTabs from '@/components/Dashboard/ProviderAccountTabs';
+import AddZoneDialog from '@/components/Dashboard/AddZoneDialog';
 import { useProvider } from '@/contexts/ProviderContext';
 
 const DOMAINS_PER_PAGE_STORAGE_KEY = 'dns_domains_per_page';
@@ -85,6 +87,7 @@ const PROVIDER_CONFIG: Record<ProviderType, { icon: React.ReactNode; color: stri
 export default function Dashboard() {
   const [searchTerm, setSearchTerm] = useState('');
   const [expandedDomainKey, setExpandedDomainKey] = useState<string | null>(null);
+  const [addZoneOpen, setAddZoneOpen] = useState(false);
   const [page, setPage] = useState(0);
   const [rowsPerPage, setRowsPerPage] = useState(20);
   const navigate = useNavigate();
@@ -148,6 +151,13 @@ export default function Dashboard() {
   const currentProviderCredentials = selectedProvider
     ? getCredentialsByProvider(selectedProvider)
     : [];
+
+  const showAddZone = !isAllScope && selectedProvider === 'cloudflare';
+  const initialAddCredentialId = useMemo(() => {
+    if (!showAddZone) return undefined;
+    if (typeof selectedCredentialId === 'number') return selectedCredentialId;
+    return currentProviderCredentials[0]?.id;
+  }, [showAddZone, selectedCredentialId, currentProviderCredentials]);
 
   const { data, isLoading, error, refetch, isRefetching } = useQuery({
     queryKey: isAllScope
@@ -660,20 +670,38 @@ export default function Dashboard() {
               }}
               disabled={!isAllScope && !selectedProvider}
             />
-            <Button
-              variant="outlined"
-              startIcon={<RefreshIcon />}
-              onClick={handleRefresh}
-              disabled={isRefetching || (!isAllScope && !selectedProvider) || (isAllScope && credentials.length === 0)}
-              sx={{
-                borderColor: 'divider',
-                bgcolor: 'background.paper',
-                color: 'text.secondary',
-                '&:hover': { borderColor: 'primary.main', color: 'primary.main' }
-              }}
+            <Stack
+              direction={{ xs: 'column', sm: 'row' }}
+              spacing={1}
+              alignItems={{ xs: 'stretch', sm: 'center' }}
+              justifyContent={{ xs: 'stretch', sm: 'flex-end' }}
             >
-              {isRefetching ? '刷新中...' : '同步列表'}
-            </Button>
+              {showAddZone && (
+                <Button
+                  variant="contained"
+                  startIcon={<AddIcon />}
+                  onClick={() => setAddZoneOpen(true)}
+                  disabled={currentProviderCredentials.length === 0}
+                  sx={{ whiteSpace: 'nowrap' }}
+                >
+                  添加域名
+                </Button>
+              )}
+              <Button
+                variant="outlined"
+                startIcon={<RefreshIcon />}
+                onClick={handleRefresh}
+                disabled={isRefetching || (!isAllScope && !selectedProvider) || (isAllScope && credentials.length === 0)}
+                sx={{
+                  borderColor: 'divider',
+                  bgcolor: 'background.paper',
+                  color: 'text.secondary',
+                  '&:hover': { borderColor: 'primary.main', color: 'primary.main' }
+                }}
+              >
+                {isRefetching ? '刷新中...' : '同步列表'}
+              </Button>
+            </Stack>
           </Stack>
 
           {isLoading ? (
@@ -719,6 +747,18 @@ export default function Dashboard() {
           )}
         </CardContent>
       </Card>
+
+      {showAddZone && (
+        <AddZoneDialog
+          open={addZoneOpen}
+          credentials={currentProviderCredentials}
+          initialCredentialId={initialAddCredentialId}
+          onClose={(refresh) => {
+            setAddZoneOpen(false);
+            if (refresh) refetch();
+          }}
+        />
+      )}
     </Box>
   );
 }

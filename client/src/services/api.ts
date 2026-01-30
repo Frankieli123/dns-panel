@@ -1,10 +1,13 @@
 import axios from 'axios';
 
+const base = String(import.meta.env.BASE_URL || '/');
+const apiBase = base.endsWith('/') ? `${base}api` : `${base}/api`;
+
 /**
  * Axios 实例配置
  */
 const api = axios.create({
-  baseURL: '/api',
+  baseURL: apiBase,
   timeout: 30000,
   headers: {
     'Content-Type': 'application/json',

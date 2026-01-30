@@ -313,6 +313,66 @@ export class CloudflareProvider extends BaseProvider {
     return 1;
   }
 
+  /**
+   * 添加域名（创建 Zone）
+   */
+  async addZone(domain: string): Promise<Zone> {
+    const name = String(domain || '').trim();
+    if (!name) {
+      throw this.createError('INVALID_DOMAIN', '域名不能为空', { httpStatus: 400 });
+    }
+
+    const accountId = this.credentials.accountId;
+    if (!accountId) {
+      throw this.createError('MISSING_ACCOUNT_ID', 'Cloudflare 添加域名需要 Account ID，请在凭证中填写', {
+        httpStatus: 400,
+      });
+    }
+
+    try {
+      const created = await this.withRetry(() => this.service.createZone(name, accountId));
+      const nameServers: string[] = Array.isArray((created as any)?.name_servers)
+        ? (created as any).name_servers.filter((s: any) => typeof s === 'string')
+        : [];
+
+      return this.normalizeZone({
+        id: (created as any)?.id || name,
+        name: (created as any)?.name || name,
+        status: (created as any)?.status || 'pending',
+        updatedAt: (created as any)?.modified_on,
+        meta: { raw: created, nameServers },
+      });
+    } catch (err: any) {
+      const msg = String(err?.message || err).toLowerCase();
+
+      // 若已存在，尝试直接查询并返回（便于展示 nameservers）
+      if (msg.includes('already exists') || msg.includes('exists')) {
+        try {
+          const existing = await this.withRetry(() => this.service.getDomainByName(name, accountId), { maxRetries: 0 });
+          if (existing) {
+            const nameServers: string[] = Array.isArray((existing as any)?.name_servers)
+              ? (existing as any).name_servers.filter((s: any) => typeof s === 'string')
+              : [];
+
+            return this.normalizeZone({
+              id: (existing as any)?.id || name,
+              name: (existing as any)?.name || name,
+              status: (existing as any)?.status || 'unknown',
+              updatedAt: (existing as any)?.modified_on,
+              meta: { raw: existing, nameServers, existed: true },
+            });
+          }
+        } catch {
+          // ignore and fallthrough
+        }
+      }
+
+      // 兼容 Cloudflare 抛出的 status 字段
+      const status = (err as any)?.status || (err as any)?.statusCode;
+      throw this.wrapError(err, status === 429 ? 'RATE_LIMIT' : 'CLOUDFLARE_ERROR');
+    }
+  }
+
   // ========== Cloudflare 特有功能 ==========
 
   /**

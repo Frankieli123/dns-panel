@@ -19,6 +19,58 @@ import { DnsProviderError } from '../providers/base/BaseProvider';
 const router = Router();
 const prisma = new PrismaClient();
 
+function parseDomains(input: unknown): string[] {
+  const rawItems: unknown[] = Array.isArray(input)
+    ? input
+    : typeof input === 'string'
+      ? input.split(/[\s,;]+/g)
+      : [];
+
+  const seen = new Set<string>();
+  const out: string[] = [];
+
+  for (const item of rawItems) {
+    let d = typeof item === 'string' ? item : String(item ?? '');
+    d = d.trim();
+    if (!d) continue;
+    d = d.replace(/^https?:\/\//i, '');
+    d = d.replace(/\/.*$/, '');
+    d = d.replace(/\.$/, '');
+    if (!d) continue;
+
+    const key = d.toLowerCase();
+    if (seen.has(key)) continue;
+    seen.add(key);
+    out.push(d);
+  }
+
+  return out;
+}
+
+async function mapWithConcurrency<T, R>(
+  items: T[],
+  limit: number,
+  fn: (item: T, index: number) => Promise<R>
+): Promise<R[]> {
+  const safeLimit = Math.max(1, Math.min(limit || 1, items.length || 1));
+  const results: R[] = new Array(items.length);
+  let nextIndex = 0;
+
+  const workers = Array.from({ length: safeLimit }, () =>
+    (async () => {
+      while (true) {
+        const idx = nextIndex;
+        if (idx >= items.length) return;
+        nextIndex += 1;
+        results[idx] = await fn(items[idx], idx);
+      }
+    })()
+  );
+
+  await Promise.all(workers);
+  return results;
+}
+
 /**
  * 获取凭证并构建 DnsServiceContext
  */
@@ -85,6 +137,86 @@ router.get('/zones', authenticateToken, generalLimiter, async (req: AuthRequest,
       page,
       pageSize,
     }, '获取域名列表成功');
+  } catch (error: any) {
+    return handleProviderError(res, error);
+  }
+});
+
+/**
+ * POST /api/dns-records/zones?credentialId=xxx
+ * 批量添加域名（如果提供商支持）
+ * body: { domains: string[] | string } 或 { domain: string }
+ */
+router.post('/zones', authenticateToken, dnsLimiter, async (req: AuthRequest, res) => {
+  try {
+    const ctx = await getServiceContext(req.user!.id, req.query.credentialId as string);
+    const body = (req.body || {}) as any;
+    const domains = parseDomains(body.domains ?? body.domain ?? body.text);
+
+    if (domains.length === 0) {
+      return errorResponse(res, '缺少必需参数: domains', 400);
+    }
+
+    const results = await mapWithConcurrency(domains, 3, async (domain) => {
+      try {
+        const zone = await dnsService.addZone(ctx, domain);
+        const meta: any = zone?.meta || {};
+        const nameServers: string[] | undefined = Array.isArray(meta?.nameServers) ? meta.nameServers : undefined;
+        const existed = meta?.existed === true;
+
+        await LoggerService.createLog({
+          userId: req.user!.id,
+          action: 'CREATE',
+          resourceType: 'ZONE',
+          domain: zone.name,
+          recordName: 'add_zone',
+          status: 'SUCCESS',
+          ipAddress: getClientIp(req),
+          newValue: JSON.stringify({
+            zoneId: zone.id,
+            domain: zone.name,
+            status: zone.status,
+            nameServers,
+            existed,
+          }),
+        });
+
+        return {
+          domain,
+          success: true,
+          existed,
+          zone: {
+            id: zone.id,
+            name: zone.name,
+            status: zone.status,
+          },
+          nameServers,
+        };
+      } catch (error: any) {
+        const providerDetails = error instanceof DnsProviderError ? error.details : undefined;
+
+        await LoggerService.createLog({
+          userId: req.user!.id,
+          action: 'CREATE',
+          resourceType: 'ZONE',
+          domain,
+          recordName: 'add_zone',
+          status: 'FAILED',
+          errorMessage: error?.message || '添加域名失败',
+          ipAddress: getClientIp(req),
+          newValue: JSON.stringify({ domain, providerDetails }),
+        });
+
+        return {
+          domain,
+          success: false,
+          error: error?.message || '添加域名失败',
+          details: providerDetails,
+        };
+      }
+    });
+
+    return successResponse(res, { results }, '添加域名完成');
   } catch (error: any) {
     return handleProviderError(res, error);
   }

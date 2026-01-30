@@ -97,3 +97,24 @@ export const refreshDomains = async (credentialId?: number | 'all' | null): Prom
   const response = await api.post('/dns-records/refresh', {}, { params });
   return response as unknown as ApiResponse;
 };
+
+export interface AddZoneResult {
+  domain: string;
+  success: boolean;
+  existed?: boolean;
+  zone?: { id: string; name: string; status: string };
+  nameServers?: string[];
+  error?: string;
+  details?: any;
+}
+
+/**
+ * 批量添加域名（创建 Zone）
+ */
+export const addZones = async (
+  credentialId: number,
+  domains: string[]
+): Promise<ApiResponse<{ results: AddZoneResult[] }>> => {
+  const response = await api.post('/dns-records/zones', { domains }, { params: { credentialId } });
+  return response as unknown as ApiResponse<{ results: AddZoneResult[] }>;
+};

@@ -406,6 +406,33 @@ export class DnsService {
   }
 
   /**
+   * 添加域名（如果提供商支持）
+   */
+  async addZone(ctx: DnsServiceContext, domain: string): Promise<Zone> {
+    const provider = this.getProvider(ctx);
+    if (!provider.addZone) {
+      throw new DnsProviderError(
+        {
+          provider: ctx.provider,
+          code: 'UNSUPPORTED',
+          message: '该提供商不支持添加域名',
+          httpStatus: 400,
+          retriable: false,
+        },
+        undefined
+      );
+    }
+
+    try {
+      const zone = await provider.addZone(domain);
+      this.invalidate(ctx, 'zones');
+      return zone;
+    } catch (err) {
+      throw this.normalizeError(ctx.provider, err);
+    }
+  }
+
+  /**
    * 清除缓存
    */
   clearCache(ctx: DnsServiceContext, scope: CacheScope = 'all', zoneId?: string): void {

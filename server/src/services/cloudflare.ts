@@ -112,6 +112,59 @@ export class CloudflareService {
   }
 
   /**
+   * 根据域名名称获取 Zone（可选按 accountId 过滤）
+   */
+  async getDomainByName(domain: string, accountId?: string): Promise<any | null> {
+    const name = String(domain || '').trim();
+    if (!name) return null;
+
+    try {
+      const response = await this.client.zones.list({
+        per_page: 1,
+        name,
+        ...(accountId ? { account: { id: accountId } } : {}),
+      } as any);
+
+      const zones = (response as any)?.result || [];
+      return zones[0] || null;
+    } catch {
+      return null;
+    }
+  }
+
+  /**
+   * 创建 Zone（域名）
+   */
+  async createZone(domain: string, accountId: string): Promise<any> {
+    const name = String(domain || '').trim();
+    const account = String(accountId || '').trim();
+    if (!name) throw new Error('域名不能为空');
+    if (!account) throw new Error('缺少 Cloudflare Account ID');
+
+    try {
+      const zone = await this.client.zones.create({
+        account: { id: account },
+        name,
+        type: 'full',
+      } as any);
+
+      cache.del(this.key('domains'));
+      return zone;
+    } catch (error: any) {
+      const status = error?.status || error?.statusCode;
+      let message = `创建域名失败: ${error?.message || String(error)}`;
+      if (status === 401) {
+        message = '创建域名失败: Cloudflare Token 无效或已过期';
+      } else if (status === 403) {
+        message = '创建域名失败: 权限不足，可能需要 Zone:Edit 权限';
+      }
+      const err = new Error(message);
+      (err as any).status = status;
+      throw err;
+    }
+  }
+
+  /**
    * 获取 DNS 记录列表
    */
   async getDNSRecords(zoneId: string): Promise<DNSRecord[]> {
