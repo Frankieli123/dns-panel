@@ -13,6 +13,7 @@ import { AuthRequest } from '../types';
 import { ProviderRegistry } from '../providers/ProviderRegistry';
 import { ProviderType } from '../providers/base/types';
 import { dnsService } from '../services/dns/DnsService';
+import { CloudflareService } from '../services/cloudflare';
 
 const router = Router();
 const prisma = new PrismaClient();
@@ -139,6 +140,18 @@ router.post('/', async (req, res) => {
       return errorResponse(res, `不支持的提供商: ${provider}`, 400);
     }
 
+    let resolvedAccountId = accountId;
+    if (provider === 'cloudflare' && !String(resolvedAccountId || '').trim()) {
+      const apiToken = (secrets as any)?.apiToken;
+      if (typeof apiToken === 'string' && apiToken.trim()) {
+        try {
+          resolvedAccountId = await new CloudflareService(apiToken).getDefaultAccountId();
+        } catch {
+          // ignore: allow credential creation without accountId, add zone will fail with a clear permission error
+        }
+      }
+    }
+
     const encryptedSecrets = encrypt(JSON.stringify(secrets));
 
     const existingCount = await prisma.dnsCredential.count({ where: { userId } });
@@ -150,7 +163,7 @@ router.post('/', async (req, res) => {
         name,
         provider,
         secrets: encryptedSecrets,
-        accountId,
+        accountId: resolvedAccountId,
         isDefault,
       },
       select: {

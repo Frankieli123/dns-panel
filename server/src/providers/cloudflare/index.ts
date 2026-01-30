@@ -48,7 +48,6 @@ export const CLOUDFLARE_CAPABILITIES: ProviderCapabilities = {
       type: 'password',
       required: true,
       placeholder: '输入 Cloudflare API Token',
-      helpText: '需要 Zone:Read 和 DNS:Edit 权限',
     },
   ],
 
@@ -322,9 +321,17 @@ export class CloudflareProvider extends BaseProvider {
       throw this.createError('INVALID_DOMAIN', '域名不能为空', { httpStatus: 400 });
     }
 
-    const accountId = this.credentials.accountId;
+    let accountId = String(this.credentials.accountId || '').trim();
     if (!accountId) {
-      throw this.createError('MISSING_ACCOUNT_ID', 'Cloudflare 添加域名需要 Account ID，请在凭证中填写', {
+      try {
+        accountId = String(await this.withRetry(() => this.service.getDefaultAccountId(), { maxRetries: 0 }) || '').trim();
+      } catch (err: any) {
+        throw this.wrapError(err, 'CLOUDFLARE_ERROR');
+      }
+    }
+
+    if (!accountId) {
+      throw this.createError('MISSING_ACCOUNT', '无法获取 Cloudflare 账户信息，请确认 Token 权限包含 Account:Read', {
         httpStatus: 400,
       });
     }
@@ -368,6 +375,25 @@ export class CloudflareProvider extends BaseProvider {
       }
 
       // 兼容 Cloudflare 抛出的 status 字段
+      const status = (err as any)?.status || (err as any)?.statusCode;
+      throw this.wrapError(err, status === 429 ? 'RATE_LIMIT' : 'CLOUDFLARE_ERROR');
+    }
+  }
+
+  /**
+   * 删除域名（删除 Zone）
+   */
+  async deleteZone(zoneId: string): Promise<boolean> {
+    const id = String(zoneId || '').trim();
+    if (!id) {
+      throw this.createError('INVALID_ZONE_ID', 'Zone ID 不能为空', { httpStatus: 400 });
+    }
+
+    try {
+      await this.withRetry(() => this.service.deleteZone(id));
+      this.clearCache();
+      return true;
+    } catch (err: any) {
       const status = (err as any)?.status || (err as any)?.statusCode;
       throw this.wrapError(err, status === 429 ? 'RATE_LIMIT' : 'CLOUDFLARE_ERROR');
     }

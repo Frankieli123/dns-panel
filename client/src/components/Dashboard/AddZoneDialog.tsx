@@ -13,10 +13,12 @@ import {
   Divider,
   IconButton,
   MenuItem,
+  Paper,
   Stack,
   Table,
   TableBody,
   TableCell,
+  TableContainer,
   TableHead,
   TableRow,
   TextField,
@@ -116,20 +118,18 @@ export default function AddZoneDialog({
 
   const canSubmit =
     !!selectedCredential &&
-    !!String(selectedCredential.accountId || '').trim() &&
     parsedDomains.length > 0 &&
     !mutation.isPending;
 
   const hasSuccess = (results || []).some(r => r.success);
 
-  const handleCopy = async (r: AddZoneResult) => {
-    const ns = r.nameServers || [];
-    const text = ns.join('\n').trim();
-    if (!text) return;
+  const handleCopy = async (domain: string, text: string) => {
+    const normalized = String(text || '').trim();
+    if (!normalized) return;
 
     try {
-      await navigator.clipboard.writeText(text);
-      setCopiedKey(r.domain);
+      await navigator.clipboard.writeText(normalized);
+      setCopiedKey(`${domain}:${normalized}`);
       window.setTimeout(() => setCopiedKey(null), 1200);
     } catch {
       setCopiedKey(null);
@@ -139,10 +139,6 @@ export default function AddZoneDialog({
   const handleSubmit = () => {
     if (!selectedCredential) {
       setSubmitError('请选择账户');
-      return;
-    }
-    if (!String(selectedCredential.accountId || '').trim()) {
-      setSubmitError('该账户未配置 Account ID，无法添加域名');
       return;
     }
     if (parsedDomains.length === 0) {
@@ -161,11 +157,11 @@ export default function AddZoneDialog({
 
   return (
     <Dialog open={open} onClose={handleDone} maxWidth="md" fullWidth fullScreen={isMobile}>
-      <DialogTitle>添加域名（Cloudflare）</DialogTitle>
+      <DialogTitle>添加域名到 Cloudflare</DialogTitle>
       <DialogContent>
         <Stack spacing={2.5} sx={{ mt: 1 }}>
           <Alert severity="info">
-            Cloudflare 限制：全局 API 1,200 次/5 分钟/用户；且每个账户最多 50 个待验证（pending）域名，超出会返回 429。
+            每个账户最多可添加 50 个待验证域名
           </Alert>
 
           <TextField
@@ -184,12 +180,6 @@ export default function AddZoneDialog({
               </MenuItem>
             ))}
           </TextField>
-
-          {selectedCredential && !String(selectedCredential.accountId || '').trim() && (
-            <Alert severity="warning">
-              当前账户未配置 Account ID，无法添加域名。请到「设置 → DNS 账户/凭证」为该 Cloudflare 账户补充 Account ID。
-            </Alert>
-          )}
 
           <TextField
             label="域名列表（每行一个）"
@@ -223,93 +213,85 @@ export default function AddZoneDialog({
                 <Chip size="small" label={`失败 ${(results || []).filter(r => !r.success).length}`} color="error" />
               </Stack>
 
-              <Table size="small" sx={{ tableLayout: 'fixed' }}>
-                <TableHead>
-                  <TableRow>
-                    <TableCell width="28%">域名</TableCell>
-                    <TableCell width="16%">状态</TableCell>
-                    <TableCell>Cloudflare DNS 服务器</TableCell>
-                    <TableCell width={64} align="right">复制</TableCell>
-                  </TableRow>
-                </TableHead>
-                <TableBody>
-                  {results.map((r) => {
-                    const ok = r.success;
-                    const zoneStatus = r.zone?.status;
-                    const ns = r.nameServers || [];
-                    const canCopy = ok && ns.length > 0;
+              <TableContainer component={Paper} variant="outlined" sx={{ borderRadius: 2 }}>
+                <Table size="small">
+                  <TableHead>
+                    <TableRow>
+                      <TableCell>域名</TableCell>
+                      <TableCell>状态</TableCell>
+                      <TableCell>Cloudflare DNS 服务器</TableCell>
+                    </TableRow>
+                  </TableHead>
+                  <TableBody>
+                    {results.map((r) => {
+                      const ok = r.success;
+                      const zoneStatus = r.zone?.status;
+                      const ns = r.nameServers || [];
 
-                    return (
-                      <TableRow key={r.domain}>
-                        <TableCell sx={{ wordBreak: 'break-word' }}>
-                          <Stack direction="row" spacing={1} alignItems="center">
-                            <Typography variant="body2">{r.domain}</Typography>
-                            {r.existed && <Chip size="small" label="已存在" variant="outlined" />}
-                          </Stack>
-                        </TableCell>
-                        <TableCell>
-                          <Chip
-                            size="small"
-                            label={ok ? statusLabel(zoneStatus) : '失败'}
-                            color={ok ? statusColor(zoneStatus) : 'error'}
-                            variant={ok ? 'filled' : 'outlined'}
-                          />
-                        </TableCell>
-                        <TableCell sx={{ wordBreak: 'break-word' }}>
-                          {ok ? (
-                            ns.length > 0 ? (
-                              <Stack spacing={0.25}>
-                                {ns.map((s) => (
-                                  <Typography key={s} variant="body2" sx={{ fontFamily: 'monospace' }}>
-                                    {s}
-                                  </Typography>
-                                ))}
-                                {copiedKey === r.domain && (
-                                  <Typography variant="caption" color="success.main">
-                                    已复制
-                                  </Typography>
-                                )}
-                              </Stack>
+                      return (
+                        <TableRow key={r.domain}>
+                          <TableCell sx={{ wordBreak: 'break-word' }}>
+                            <Stack direction="row" spacing={1} alignItems="center">
+                              <Typography variant="body2">{r.domain}</Typography>
+                              {r.existed && <Chip size="small" label="已存在" variant="outlined" />}
+                            </Stack>
+                          </TableCell>
+                          <TableCell>
+                            <Chip
+                              size="small"
+                              label={ok ? statusLabel(zoneStatus) : '失败'}
+                              color={ok ? statusColor(zoneStatus) : 'error'}
+                              variant={ok ? 'filled' : 'outlined'}
+                            />
+                          </TableCell>
+                          <TableCell sx={{ wordBreak: 'break-word' }}>
+                            {ok ? (
+                              ns.length > 0 ? (
+                                <Stack spacing={0.25}>
+                                  {ns.map((s) => (
+                                    <Stack key={s} direction="row" spacing={0.5} alignItems="center">
+                                      <Typography variant="body2" sx={{ fontFamily: 'monospace' }}>
+                                        {s}
+                                      </Typography>
+                                      <Tooltip title="复制">
+                                        <IconButton size="small" onClick={() => handleCopy(r.domain, s)} sx={{ p: 0.25 }}>
+                                          <CopyIcon fontSize="inherit" />
+                                        </IconButton>
+                                      </Tooltip>
+                                      {copiedKey === `${r.domain}:${s}` && (
+                                        <Typography variant="caption" color="success.main">
+                                          已复制
+                                        </Typography>
+                                      )}
+                                    </Stack>
+                                  ))}
+                                </Stack>
+                              ) : (
+                                <Typography variant="body2" color="text.secondary">-</Typography>
+                              )
                             ) : (
-                              <Typography variant="body2" color="text.secondary">-</Typography>
-                            )
-                          ) : (
-                            <Typography variant="body2" color="error.main">{r.error || '添加失败'}</Typography>
-                          )}
-                        </TableCell>
-                        <TableCell align="right">
-                          <Tooltip title={canCopy ? '复制 nameservers' : '无可复制内容'}>
-                            <span>
-                              <IconButton
-                                size="small"
-                                onClick={() => handleCopy(r)}
-                                disabled={!canCopy}
-                              >
-                                <CopyIcon fontSize="small" />
-                              </IconButton>
-                            </span>
-                          </Tooltip>
-                        </TableCell>
-                      </TableRow>
-                    );
-                  })}
-                </TableBody>
-              </Table>
+                              <Typography variant="body2" color="error.main">{r.error || '添加失败'}</Typography>
+                            )}
+                          </TableCell>
+                        </TableRow>
+                      );
+                    })}
+                  </TableBody>
+                </Table>
+              </TableContainer>
             </>
           )}
         </Stack>
       </DialogContent>
 
-      <DialogActions sx={{ px: 3, pb: 2 }}>
-        <Button onClick={handleDone} disabled={mutation.isPending}>
-          完成
-        </Button>
-        <Box sx={{ flex: 1 }} />
+      <DialogActions sx={{ px: 3, pb: 2, justifyContent: 'flex-end' }}>
         <Button variant="contained" onClick={handleSubmit} disabled={!canSubmit}>
           添加
+        </Button>
+        <Button onClick={handleDone} disabled={mutation.isPending} color="inherit">
+          {results ? '完成' : '取消'}
         </Button>
       </DialogActions>
     </Dialog>
   );
 }
-

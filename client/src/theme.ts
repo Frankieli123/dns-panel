@@ -101,6 +101,10 @@ const theme = createTheme(
           },
           containedPrimary: {
             background: `linear-gradient(135deg, ${primaryColor} 0%, #334155 100%)`,
+            '&.Mui-disabled': {
+              background: '#CBD5E1',
+              color: '#94A3B8',
+            },
           },
         },
       },

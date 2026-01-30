@@ -433,6 +433,35 @@ export class DnsService {
   }
 
   /**
+   * 删除域名（如果提供商支持）
+   */
+  async deleteZone(ctx: DnsServiceContext, zoneIdOrName: string): Promise<boolean> {
+    const provider = this.getProvider(ctx);
+    if (!provider.deleteZone) {
+      throw new DnsProviderError(
+        {
+          provider: ctx.provider,
+          code: 'UNSUPPORTED',
+          message: '该提供商不支持删除域名',
+          httpStatus: 400,
+          retriable: false,
+        },
+        undefined
+      );
+    }
+
+    const zoneId = await this.resolveZoneId(ctx, zoneIdOrName);
+
+    try {
+      const ok = await provider.deleteZone(zoneId);
+      this.invalidate(ctx, 'all', zoneId);
+      return ok;
+    } catch (err) {
+      throw this.normalizeError(ctx.provider, err);
+    }
+  }
+
+  /**
    * 清除缓存
    */
   clearCache(ctx: DnsServiceContext, scope: CacheScope = 'all', zoneId?: string): void {

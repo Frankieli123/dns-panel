@@ -237,6 +237,55 @@ router.get('/zones/:zoneId', authenticateToken, generalLimiter, async (req: Auth
   }
 });
 
+/**
+ * DELETE /api/dns-records/zones/:zoneId?credentialId=xxx
+ * 删除域名（如果提供商支持）
+ */
+router.delete('/zones/:zoneId', authenticateToken, dnsLimiter, async (req: AuthRequest, res) => {
+  try {
+    const ctx = await getServiceContext(req.user!.id, req.query.credentialId as string);
+    const { zoneId } = req.params;
+
+    let zoneName = zoneId;
+    try {
+      const zone = await dnsService.getZone(ctx, zoneId);
+      if (zone?.name) zoneName = zone.name;
+    } catch {}
+
+    const ok = await dnsService.deleteZone(ctx, zoneId);
+
+    await LoggerService.createLog({
+      userId: req.user!.id,
+      action: 'DELETE',
+      resourceType: 'ZONE',
+      domain: zoneName,
+      recordName: 'delete_zone',
+      status: ok ? 'SUCCESS' : 'FAILED',
+      ipAddress: getClientIp(req),
+      newValue: JSON.stringify({ zoneId, domain: zoneName, deleted: ok }),
+    });
+
+    return successResponse(res, { deleted: ok }, '删除域名成功');
+  } catch (error: any) {
+    try {
+      const details = error instanceof DnsProviderError ? error.details : undefined;
+      await LoggerService.createLog({
+        userId: req.user!.id,
+        action: 'DELETE',
+        resourceType: 'ZONE',
+        domain: req.params.zoneId,
+        recordName: 'delete_zone',
+        status: 'FAILED',
+        errorMessage: error?.message || '删除域名失败',
+        ipAddress: getClientIp(req),
+        newValue: JSON.stringify({ zoneId: req.params.zoneId, providerDetails: details }),
+      });
+    } catch {}
+
+    return handleProviderError(res, error);
+  }
+});
+
 // ========== DNS 记录相关 ==========
 
 /**

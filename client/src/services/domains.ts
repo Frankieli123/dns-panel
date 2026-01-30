@@ -118,3 +118,11 @@ export const addZones = async (
   const response = await api.post('/dns-records/zones', { domains }, { params: { credentialId } });
   return response as unknown as ApiResponse<{ results: AddZoneResult[] }>;
 };
+
+/**
+ * 删除域名（删除 Zone）
+ */
+export const deleteZone = async (credentialId: number, zoneId: string): Promise<ApiResponse<{ deleted: boolean }>> => {
+  const response = await api.delete(`/dns-records/zones/${zoneId}`, { params: { credentialId } });
+  return response as unknown as ApiResponse<{ deleted: boolean }>;
+};

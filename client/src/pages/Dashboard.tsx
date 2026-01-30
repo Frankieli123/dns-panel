@@ -1,5 +1,6 @@
 import { useState, Fragment, useEffect, useMemo } from 'react';
-import { useQuery } from '@tanstack/react-query';
+import type { MouseEvent as ReactMouseEvent } from 'react';
+import { useMutation, useQuery } from '@tanstack/react-query';
 import { useLocation, useNavigate } from 'react-router-dom';
 import {
   Box,
@@ -22,6 +23,12 @@ import {
   IconButton,
   Collapse,
   Divider,
+  Dialog,
+  DialogActions,
+  DialogContent,
+  DialogTitle,
+  Menu,
+  MenuItem,
   TablePagination,
   useTheme,
   useMediaQuery,
@@ -37,6 +44,8 @@ import {
   KeyboardArrowDown as KeyboardArrowDownIcon,
   KeyboardArrowUp as KeyboardArrowUpIcon,
   Business as BusinessIcon,
+  Delete as DeleteIcon,
+  MoreVert as MoreVertIcon,
   OpenInNew as OpenInNewIcon,
   AccessTime as AccessTimeIcon,
   Event as EventIcon,
@@ -53,7 +62,7 @@ import {
   PowerSettingsNew as PowerdnsIcon,
   RocketLaunch as SpaceshipIcon,
 } from '@mui/icons-material';
-import { getDomains, refreshDomains } from '@/services/domains';
+import { deleteZone, getDomains, refreshDomains } from '@/services/domains';
 import { getStoredUser } from '@/services/auth';
 import { lookupDomainExpiry } from '@/services/domainExpiry';
 import { formatRelativeTime } from '@/utils/formatters';
@@ -88,6 +97,11 @@ export default function Dashboard() {
   const [searchTerm, setSearchTerm] = useState('');
   const [expandedDomainKey, setExpandedDomainKey] = useState<string | null>(null);
   const [addZoneOpen, setAddZoneOpen] = useState(false);
+  const [zoneMenuAnchor, setZoneMenuAnchor] = useState<HTMLElement | null>(null);
+  const [zoneMenuDomain, setZoneMenuDomain] = useState<Domain | null>(null);
+  const [deleteZoneOpen, setDeleteZoneOpen] = useState(false);
+  const [deleteZoneError, setDeleteZoneError] = useState<string | null>(null);
+  const [deleteConfirmInput, setDeleteConfirmInput] = useState('');
   const [page, setPage] = useState(0);
   const [rowsPerPage, setRowsPerPage] = useState(20);
   const navigate = useNavigate();
@@ -134,6 +148,14 @@ export default function Dashboard() {
     const map = new Map<number, string>();
     credentials.forEach((c) => {
       map.set(c.id, c.name);
+    });
+    return map;
+  }, [credentials]);
+
+  const credentialProviderById = useMemo(() => {
+    const map = new Map<number, ProviderType>();
+    credentials.forEach((c) => {
+      map.set(c.id, c.provider);
     });
     return map;
   }, [credentials]);
@@ -386,6 +408,66 @@ export default function Dashboard() {
     return domain.credentialName || '未知账户';
   };
 
+  const getDomainProvider = (domain: Domain): ProviderType | undefined => {
+    if (domain.provider) return domain.provider;
+    if (typeof domain.credentialId === 'number') {
+      const p = credentialProviderById.get(domain.credentialId);
+      if (p) return p;
+    }
+    return selectedProvider || undefined;
+  };
+
+  const canDeleteDomain = (domain: Domain): boolean =>
+    getDomainProvider(domain) === 'cloudflare' && typeof domain.credentialId === 'number';
+
+  const deleteMutation = useMutation({
+    mutationFn: async (payload: { credentialId: number; zoneId: string }) => deleteZone(payload.credentialId, payload.zoneId),
+    onSuccess: async () => {
+      setDeleteZoneError(null);
+      setDeleteZoneOpen(false);
+      setZoneMenuAnchor(null);
+      setZoneMenuDomain(null);
+      setExpandedDomainKey(null);
+      refetch();
+    },
+    onError: (err: any) => {
+      setDeleteZoneError(err?.message ? String(err.message) : String(err));
+    },
+  });
+
+  const openZoneMenu = (e: ReactMouseEvent<HTMLElement>, domain: Domain) => {
+    e.stopPropagation();
+    setZoneMenuAnchor(e.currentTarget);
+    setZoneMenuDomain(domain);
+  };
+
+  const closeZoneMenu = () => setZoneMenuAnchor(null);
+
+  const openDeleteZoneDialog = () => {
+    if (!zoneMenuDomain) return;
+    setDeleteZoneError(null);
+    setDeleteZoneOpen(true);
+    closeZoneMenu();
+  };
+
+  const closeDeleteZoneDialog = () => {
+    if (deleteMutation.isPending) return;
+    setDeleteZoneOpen(false);
+    setDeleteZoneError(null);
+    setDeleteConfirmInput('');
+    setZoneMenuDomain(null);
+  };
+
+  const confirmDeleteZone = () => {
+    if (!zoneMenuDomain) return;
+    if (!canDeleteDomain(zoneMenuDomain)) return;
+    if (deleteConfirmInput !== zoneMenuDomain.name) return;
+    deleteMutation.mutate({
+      credentialId: zoneMenuDomain.credentialId as number,
+      zoneId: zoneMenuDomain.id,
+    });
+  };
+
   // 移动端卡片视图渲染函数
   const renderMobileView = () => (
     <Stack spacing={2}>
@@ -462,6 +544,14 @@ export default function Dashboard() {
                   </IconButton>
                   <IconButton
                     size="small"
+                    onClick={(e) => openZoneMenu(e, domain)}
+                    disabled={!canDeleteDomain(domain)}
+                    sx={{ mr: 1 }}
+                  >
+                    <MoreVertIcon fontSize="small" />
+                  </IconButton>
+                  <IconButton
+                    size="small"
                     onClick={() => setExpandedDomainKey(isExpanded ? null : rowKey)}
                     sx={{ 
                       transform: isExpanded ? 'rotate(180deg)' : 'rotate(0deg)',
@@ -512,6 +602,7 @@ export default function Dashboard() {
             <TableCell>状态</TableCell>
             <TableCell>最后更新</TableCell>
             <TableCell>{expiryLabel}</TableCell>
+            <TableCell width={52} align="right" />
           </TableRow>
         </TableHead>
         <TableBody>
@@ -612,9 +703,18 @@ export default function Dashboard() {
                   <TableCell sx={{ color: 'text.secondary' }}>
                     {formatExpiryValue(domain.name)}
                   </TableCell>
+                  <TableCell align="right" onClick={(e) => e.stopPropagation()}>
+                    <IconButton
+                      size="small"
+                      onClick={(e) => openZoneMenu(e, domain)}
+                      disabled={!canDeleteDomain(domain)}
+                    >
+                      <MoreVertIcon fontSize="inherit" />
+                    </IconButton>
+                  </TableCell>
                 </TableRow>
                 <TableRow>
-                  <TableCell style={{ padding: 0 }} colSpan={showAccountColumn ? 6 : 5}>
+                  <TableCell style={{ padding: 0 }} colSpan={showAccountColumn ? 7 : 6}>
                     <Collapse in={isExpanded} timeout="auto" unmountOnExit>
                       <DnsManagement zoneId={domain.id} credentialId={domain.credentialId} />
                     </Collapse>
@@ -747,6 +847,57 @@ export default function Dashboard() {
           )}
         </CardContent>
       </Card>
+
+      <Menu
+        anchorEl={zoneMenuAnchor}
+        open={!!zoneMenuAnchor}
+        onClose={closeZoneMenu}
+        anchorOrigin={{ vertical: 'bottom', horizontal: 'right' }}
+        transformOrigin={{ vertical: 'top', horizontal: 'right' }}
+      >
+        <MenuItem onClick={openDeleteZoneDialog} disabled={!zoneMenuDomain || !canDeleteDomain(zoneMenuDomain)}>
+          <DeleteIcon fontSize="small" style={{ marginRight: 8 }} />
+          从 Cloudflare 删除
+        </MenuItem>
+      </Menu>
+
+      <Dialog open={deleteZoneOpen} onClose={closeDeleteZoneDialog} maxWidth="xs" fullWidth>
+        <DialogTitle>确认删除</DialogTitle>
+        <DialogContent>
+          <Stack spacing={2} sx={{ mt: 1 }}>
+            <Typography variant="body2">
+              确认从 Cloudflare 删除域名 <strong>{zoneMenuDomain?.name || '-'}</strong> 吗？
+            </Typography>
+            <Alert severity="warning">
+              该操作会删除整个 Zone（包含所有 DNS 记录），且不可恢复。
+            </Alert>
+            <TextField
+              label="请输入域名以确认删除"
+              placeholder={zoneMenuDomain?.name || ''}
+              value={deleteConfirmInput}
+              onChange={(e) => setDeleteConfirmInput(e.target.value)}
+              fullWidth
+              size="small"
+              disabled={deleteMutation.isPending}
+              autoComplete="off"
+            />
+            {deleteZoneError && <Alert severity="error">{deleteZoneError}</Alert>}
+          </Stack>
+        </DialogContent>
+        <DialogActions>
+          <Button onClick={closeDeleteZoneDialog} disabled={deleteMutation.isPending} color="inherit">
+            取消
+          </Button>
+          <Button
+            onClick={confirmDeleteZone}
+            disabled={deleteMutation.isPending || deleteConfirmInput !== zoneMenuDomain?.name}
+            color="error"
+            variant="contained"
+          >
+            {deleteMutation.isPending ? '删除中...' : '删除'}
+          </Button>
+        </DialogActions>
+      </Dialog>
 
       {showAddZone && (
         <AddZoneDialog

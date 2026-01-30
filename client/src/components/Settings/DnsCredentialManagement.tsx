@@ -49,9 +49,11 @@ const PROVIDER_CREDENTIAL_GUIDE: Record<ProviderType, { title: string; steps: st
     title: 'Cloudflare API Token 获取方式',
     steps: [
       '登录 Cloudflare Dashboard',
-      '点击右上角头像 → My Profile → API Tokens',
-      '点击 Create Token → 使用 Edit zone DNS 模板或自定义权限',
-      '复制生成的 API Token'
+      '右上角头像 → My Profile → API Tokens',
+      'Create Token → Create Custom Token',
+      '权限（Permissions）添加：区域 → 区域 → 编辑；区域 → DNS → 编辑',
+      '区域资源（Zone Resources）：包含 → 账户的所有区域 → 选择你的账户',
+      '创建并复制 Token（若账号下还没有任何域名，建议额外加：Account → Read）'
     ],
     link: 'https://dash.cloudflare.com/profile/api-tokens'
   },
@@ -181,7 +183,6 @@ const PROVIDER_CREDENTIAL_GUIDE: Record<ProviderType, { title: string; steps: st
 interface CredentialFormInputs {
   name: string;
   provider: ProviderType;
-  accountId?: string;
   secrets: Record<string, string>;
 }
 
@@ -244,7 +245,6 @@ export default function DnsCredentialManagement() {
   useEffect(() => {
     if (!dialogOpen || editingCredential) return;
     setValue('secrets', {});
-    setValue('accountId', undefined);
   }, [dialogOpen, editingCredential, selectedProviderType, setValue]);
 
   // 打开新增对话框
@@ -262,7 +262,6 @@ export default function DnsCredentialManagement() {
     reset({
       name: cred.name,
       provider: cred.provider,
-      accountId: cred.accountId || '',
       secrets: {}
     });
     setDialogOpen(true);
@@ -335,14 +334,12 @@ export default function DnsCredentialManagement() {
       if (editingCredential) {
         await updateDnsCredential(editingCredential.id, {
           name: data.name,
-          accountId: data.accountId,
           secrets: Object.keys(secretsToSubmit).length > 0 ? secretsToSubmit : undefined
         });
       } else {
         await createDnsCredential({
           name: data.name,
           provider: data.provider,
-          accountId: data.accountId,
           secrets: secretsToSubmit
         });
       }
@@ -524,16 +521,6 @@ export default function DnsCredentialManagement() {
                   </Typography>
 
                   <Stack spacing={2} mt={1}>
-                    {selectedProviderType === 'cloudflare' && (
-                      <TextField
-                        label="Account ID (可选)"
-                        fullWidth
-                        size="small"
-                        {...register('accountId')}
-                        helperText="Cloudflare 某些功能需要 Account ID"
-                      />
-                    )}
-
                     {selectedProviderConfig.authFields.map((field) => (
                       <Fragment key={field.key}>
                         {selectedProviderType === 'dnspod' && field.key === 'tokenId' && (

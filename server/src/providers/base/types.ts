@@ -269,4 +269,9 @@ export interface IDnsProvider {
    * 添加域名（如果支持）
    */
   addZone?(domain: string): Promise<Zone>;
+
+  /**
+   * 删除域名（如果支持）
+   */
+  deleteZone?(zoneId: string): Promise<boolean>;
 }

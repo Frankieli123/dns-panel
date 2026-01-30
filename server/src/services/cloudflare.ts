@@ -6,6 +6,11 @@ import { DNSRecord, Domain } from '../types';
 
 const cache = new NodeCache();
 
+type CfAccount = {
+  id: string;
+  name?: string;
+};
+
 /**
  * Cloudflare 服务
  */
@@ -34,6 +39,65 @@ export class CloudflareService {
     } catch {
       return false;
     }
+  }
+
+  /**
+   * 获取账户列表（Accounts）
+   */
+  async getAccounts(): Promise<CfAccount[]> {
+    const cacheKey = this.key('accounts');
+    const cached = cache.get<CfAccount[]>(cacheKey);
+    if (cached) return cached;
+
+    try {
+      const response = await (this.client as any).accounts.list({ per_page: 50 } as any);
+      const raw = (response as any)?.result ?? response ?? [];
+      const list: CfAccount[] = Array.isArray(raw)
+        ? raw
+          .map((a: any) => ({
+            id: typeof a?.id === 'string' ? a.id : '',
+            name: typeof a?.name === 'string' ? a.name : undefined,
+          }))
+          .filter(a => !!a.id)
+        : [];
+
+      cache.set(cacheKey, list, config.cache.domainsTTL);
+      return list;
+    } catch (error: any) {
+      const status = error?.status || error?.statusCode;
+      let message = `获取账户列表失败: ${error?.message || String(error)}`;
+      if (status === 401) {
+        message = '获取账户列表失败: Cloudflare Token 无效或已过期';
+      } else if (status === 403) {
+        message = '获取账户列表失败: 权限不足，需要 Account:Read 权限';
+      }
+      const err = new Error(message);
+      (err as any).status = status;
+      throw err;
+    }
+  }
+
+  /**
+   * 获取默认账户 ID（无账号时返回空字符串）
+   */
+  async getDefaultAccountId(): Promise<string> {
+    try {
+      const accounts = await this.getAccounts();
+      if (accounts[0]?.id) return accounts[0].id;
+    } catch {
+      // ignore and fallback to zone list
+    }
+
+    try {
+      const response = await this.client.zones.list({ per_page: 1 } as any);
+      const first = ((response as any)?.result || [])[0];
+      const id = first?.account?.id;
+      if (typeof id === 'string' && id.trim()) return id.trim();
+    } catch {
+      // ignore
+    }
+
+    return '';
   }
 
   /**
@@ -157,6 +221,31 @@ export class CloudflareService {
         message = '创建域名失败: Cloudflare Token 无效或已过期';
       } else if (status === 403) {
         message = '创建域名失败: 权限不足，可能需要 Zone:Edit 权限';
+      }
+      const err = new Error(message);
+      (err as any).status = status;
+      throw err;
+    }
+  }
+
+  /**
+   * 删除 Zone（域名）
+   */
+  async deleteZone(zoneId: string): Promise<boolean> {
+    const id = String(zoneId || '').trim();
+    if (!id) throw new Error('缺少 Zone ID');
+
+    try {
+      await (this.client.zones as any).delete({ zone_id: id } as any);
+      cache.del(this.key('domains'));
+      return true;
+    } catch (error: any) {
+      const status = error?.status || error?.statusCode;
+      let message = `删除域名失败: ${error?.message || String(error)}`;
+      if (status === 401) {
+        message = '删除域名失败: Cloudflare Token 无效或已过期';
+      } else if (status === 403) {
+        message = '删除域名失败: 权限不足，可能需要 Zone:Edit 权限';
       }
       const err = new Error(message);
       (err as any).status = status;
