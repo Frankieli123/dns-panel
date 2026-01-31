@@ -31,6 +31,28 @@ import { ContentCopy as CopyIcon } from '@mui/icons-material';
 import type { DnsCredential } from '@/types/dns';
 import { addZones, AddZoneResult } from '@/services/domains';
 
+const PROVIDER_DISPLAY_NAME: Partial<Record<DnsCredential['provider'], string>> = {
+  cloudflare: 'Cloudflare',
+  aliyun: '阿里云',
+  dnspod: '腾讯云',
+  dnspod_token: '腾讯云',
+  huawei: '华为云',
+  baidu: '百度云',
+  huoshan: '火山引擎',
+  jdcloud: '京东云',
+  dnsla: 'DNSLA',
+  namesilo: 'NameSilo',
+  powerdns: 'PowerDNS',
+  spaceship: 'Spaceship',
+  west: '西部数码',
+};
+
+const getProviderDisplayName = (provider?: DnsCredential['provider'], providerName?: string): string => {
+  if (providerName) return String(providerName);
+  if (!provider) return 'DNS';
+  return PROVIDER_DISPLAY_NAME[provider] || provider;
+};
+
 function parseDomainsText(text: string): string[] {
   const parts = String(text || '').split(/[\s,;]+/g);
   const seen = new Set<string>();
@@ -103,6 +125,10 @@ export default function AddZoneDialog({
     [credentials, credentialId]
   );
 
+  const selectedProvider = selectedCredential?.provider || credentials[0]?.provider;
+  const providerLabel = getProviderDisplayName(selectedProvider, selectedCredential?.providerName);
+  const hasMultipleProviders = useMemo(() => new Set(credentials.map(c => c.provider)).size > 1, [credentials]);
+
   const parsedDomains = useMemo(() => parseDomainsText(domainsText), [domainsText]);
 
   const mutation = useMutation({
@@ -157,11 +183,13 @@ export default function AddZoneDialog({
 
   return (
     <Dialog open={open} onClose={handleDone} maxWidth="md" fullWidth fullScreen={isMobile}>
-      <DialogTitle>添加域名到 Cloudflare</DialogTitle>
+      <DialogTitle>添加域名到 {providerLabel}</DialogTitle>
       <DialogContent>
         <Stack spacing={2.5} sx={{ mt: 1 }}>
           <Alert severity="info">
-            每个账户最多可添加 50 个待验证域名
+            {selectedProvider === 'cloudflare'
+              ? '每个账户最多可添加 50 个待验证域名'
+              : '将调用提供商 API 添加域名；如返回 DNS 服务器，可直接复制用于设置 NS'}
           </Alert>
 
           <TextField
@@ -172,11 +200,11 @@ export default function AddZoneDialog({
             fullWidth
             size="small"
             disabled={mutation.isPending || credentials.length === 0}
-            helperText={credentials.length === 0 ? '暂无可用账户，请先在设置中添加 Cloudflare 凭证' : undefined}
+            helperText={credentials.length === 0 ? '暂无可用账户，请先在设置中添加凭证' : undefined}
           >
             {credentials.map(c => (
               <MenuItem key={c.id} value={c.id}>
-                {c.name}
+                {hasMultipleProviders ? `${c.name}（${getProviderDisplayName(c.provider, c.providerName)}）` : c.name}
               </MenuItem>
             ))}
           </TextField>
@@ -219,7 +247,7 @@ export default function AddZoneDialog({
                     <TableRow>
                       <TableCell>域名</TableCell>
                       <TableCell>状态</TableCell>
-                      <TableCell>Cloudflare DNS 服务器</TableCell>
+                      <TableCell>{selectedProvider === 'cloudflare' ? 'Cloudflare DNS 服务器' : 'DNS 服务器'}</TableCell>
                     </TableRow>
                   </TableHead>
                   <TableBody>

@@ -516,4 +516,19 @@ export class PowerdnsProvider extends BaseProvider {
       throw this.wrapError(err);
     }
   }
+
+  async deleteZone(zoneId: string): Promise<boolean> {
+    const id = String(zoneId || '').trim();
+    if (!id) {
+      throw this.createError('INVALID_ZONE_ID', 'Zone ID 不能为空', { httpStatus: 400 });
+    }
+
+    try {
+      const zoneIdWithDot = this.ensureTrailingDot(id);
+      await this.request('DELETE', `/api/v1/servers/${this.serverId}/zones/${zoneIdWithDot}`);
+      return true;
+    } catch (err) {
+      throw this.wrapError(err);
+    }
+  }
 }

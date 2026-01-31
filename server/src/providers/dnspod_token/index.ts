@@ -663,4 +663,72 @@ export class DnspodTokenProvider extends BaseProvider {
       return 600;
     }
   }
+
+  async addZone(domain: string): Promise<Zone> {
+    const name = String(domain || '').trim();
+    if (!name) {
+      throw this.createError('INVALID_DOMAIN', '域名不能为空', { httpStatus: 400 });
+    }
+
+    try {
+      const resp = await this.request<DomainInfoResponse>('Domain.Create', { domain: name });
+      const d = resp.domain;
+      if (!d?.id) {
+        throw this.createError('CREATE_DOMAIN_FAILED', '创建域名失败', { meta: { response: resp } });
+      }
+
+      const zone = this.normalizeZone({
+        id: String(d.id),
+        name: d.name || name,
+        status: d.status || 'active',
+        updatedAt: d.updated_on,
+        meta: { raw: d, grade: d.grade, ttl: d.ttl },
+      });
+
+      this.rememberZone(zone);
+      return zone;
+    } catch (err: any) {
+      const code = String((err as any)?.details?.code || '');
+      if (code === '34' || code === 'DomainAlreadyExist') {
+        try {
+          const existing = await this.getZone(name);
+          return { ...existing, meta: { ...existing.meta, existed: true } };
+        } catch {
+          // 忽略
+        }
+      }
+      throw this.wrapError(err);
+    }
+  }
+
+  async deleteZone(zoneId: string): Promise<boolean> {
+    const input = String(zoneId || '').trim();
+    if (!input) {
+      throw this.createError('INVALID_ZONE_ID', 'Zone ID 不能为空', { httpStatus: 400 });
+    }
+
+    try {
+      if (/^\d+$/.test(input)) {
+        const cachedName = this.domainIdToName.get(input);
+        await this.request<CommonOkResponse>('Domain.Remove', { domain_id: input });
+        this.domainIdToName.delete(input);
+        if (cachedName) {
+          this.domainNameToId.delete(cachedName);
+        } else {
+          for (const [name, id] of this.domainNameToId.entries()) {
+            if (id === input) this.domainNameToId.delete(name);
+          }
+        }
+        return true;
+      }
+
+      await this.request<CommonOkResponse>('Domain.Remove', { domain: input });
+      const existingId = this.domainNameToId.get(input);
+      if (existingId) this.domainIdToName.delete(existingId);
+      this.domainNameToId.delete(input);
+      return true;
+    } catch (err) {
+      throw this.wrapError(err);
+    }
+  }
 }

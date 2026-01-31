@@ -871,4 +871,37 @@ export class DnspodProvider extends BaseProvider {
       throw this.wrapError(err);
     }
   }
+
+  async deleteZone(zoneId: string): Promise<boolean> {
+    const id = String(zoneId || '').trim();
+    if (!id) {
+      throw this.createError('INVALID_ZONE_ID', 'Zone ID 不能为空', { httpStatus: 400 });
+    }
+
+    try {
+      if (this.legacyProvider && this.legacyProvider.deleteZone) {
+        return await this.legacyProvider.deleteZone(id);
+      }
+
+      if (/^\d+$/.test(id)) {
+        try {
+          await this.request<CommonOkResponse>('DeleteDomain', { DomainId: Number(id) });
+          return true;
+        } catch (err) {
+          try {
+            const zone = await this.getZone(id);
+            await this.request<CommonOkResponse>('DeleteDomain', { Domain: zone.name });
+            return true;
+          } catch {
+            throw err;
+          }
+        }
+      }
+
+      await this.request<CommonOkResponse>('DeleteDomain', { Domain: id });
+      return true;
+    } catch (err) {
+      throw this.wrapError(err);
+    }
+  }
 }

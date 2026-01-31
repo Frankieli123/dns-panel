@@ -427,15 +427,50 @@ export class JdcloudProvider extends BaseProvider {
   }
 
   async addZone(domain: string): Promise<Zone> {
+    const name = String(domain || '').trim();
+    if (!name) {
+      throw this.createError('INVALID_DOMAIN', '域名不能为空', { httpStatus: 400 });
+    }
+
     try {
-      const resp = await this.request<{ result?: { data?: { id: number } } }>('POST', `/v2/regions/${this.region}/domain`, undefined, { domainName: domain, domainId: 0 });
+      const resp = await this.request<{ result?: { data?: { id: number; domainName?: string; packId?: number } } }>(
+        'POST',
+        `/v2/regions/${this.region}/domain`,
+        undefined,
+        { packId: 0, domainName: name }
+      );
       const id = resp.result?.data?.id;
       if (!id) throw this.createError('CREATE_FAILED', '添加域名失败');
       return this.normalizeZone({
         id: String(id),
-        name: domain,
+        name: resp.result?.data?.domainName || name,
         status: 'active',
+        meta: { packId: resp.result?.data?.packId ?? 0 },
       });
+    } catch (err) {
+      // 若可能已存在，尝试直接查询并返回
+      try {
+        const list = await this.getZones(1, 99, name);
+        const found = list.zones.find(z => z.name.toLowerCase() === name.toLowerCase());
+        if (found) {
+          return { ...found, meta: { ...(found.meta || {}), existed: true } };
+        }
+      } catch {
+        // ignore
+      }
+      throw this.wrapError(err);
+    }
+  }
+
+  async deleteZone(zoneId: string): Promise<boolean> {
+    const id = String(zoneId || '').trim();
+    if (!id) {
+      throw this.createError('INVALID_ZONE_ID', 'Zone ID 不能为空', { httpStatus: 400 });
+    }
+
+    try {
+      await this.request('DELETE', `/v2/regions/${this.region}/domain/${id}`);
+      return true;
     } catch (err) {
       throw this.wrapError(err);
     }

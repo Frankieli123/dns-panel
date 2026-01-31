@@ -174,12 +174,49 @@ export default function Dashboard() {
     ? getCredentialsByProvider(selectedProvider)
     : [];
 
-  const showAddZone = !isAllScope && selectedProvider === 'cloudflare';
+  const isZoneManageProvider = (provider?: ProviderType | null): boolean => {
+    if (!provider) return false;
+    return (
+      provider === 'cloudflare' ||
+      provider === 'aliyun' ||
+      provider === 'dnspod' ||
+      provider === 'dnspod_token' ||
+      provider === 'huawei' ||
+      provider === 'baidu' ||
+      provider === 'huoshan' ||
+      provider === 'jdcloud' ||
+      provider === 'dnsla' ||
+      provider === 'powerdns'
+    );
+  };
+
+  const zoneManageCredentials = useMemo(
+    () => credentials.filter(c => isZoneManageProvider(c.provider)),
+    [credentials]
+  );
+
+  const addZoneCredentials = isAllScope ? zoneManageCredentials : currentProviderCredentials;
+
+  const showAddZone = isAllScope ? true : isZoneManageProvider(selectedProvider);
   const initialAddCredentialId = useMemo(() => {
     if (!showAddZone) return undefined;
+    if (isAllScope) {
+      if (typeof allScopeCredentialId === 'number' && zoneManageCredentials.some(c => c.id === allScopeCredentialId)) {
+        return allScopeCredentialId;
+      }
+      return zoneManageCredentials[0]?.id;
+    }
+
     if (typeof selectedCredentialId === 'number') return selectedCredentialId;
     return currentProviderCredentials[0]?.id;
-  }, [showAddZone, selectedCredentialId, currentProviderCredentials]);
+  }, [
+    showAddZone,
+    isAllScope,
+    allScopeCredentialId,
+    zoneManageCredentials,
+    selectedCredentialId,
+    currentProviderCredentials,
+  ]);
 
   const { data, isLoading, error, refetch, isRefetching } = useQuery({
     queryKey: isAllScope
@@ -418,7 +455,12 @@ export default function Dashboard() {
   };
 
   const canDeleteDomain = (domain: Domain): boolean =>
-    getDomainProvider(domain) === 'cloudflare' && typeof domain.credentialId === 'number';
+    isZoneManageProvider(getDomainProvider(domain)) && typeof domain.credentialId === 'number';
+
+  const canOpenZoneMenu = (domain: Domain): boolean => typeof domain.credentialId === 'number';
+
+  const zoneMenuProvider = zoneMenuDomain ? getDomainProvider(zoneMenuDomain) : undefined;
+  const zoneMenuProviderLabel = zoneMenuProvider ? (PROVIDER_CONFIG[zoneMenuProvider]?.name || zoneMenuProvider) : 'DNS';
 
   const deleteMutation = useMutation({
     mutationFn: async (payload: { credentialId: number; zoneId: string }) => deleteZone(payload.credentialId, payload.zoneId),
@@ -545,7 +587,7 @@ export default function Dashboard() {
                   <IconButton
                     size="small"
                     onClick={(e) => openZoneMenu(e, domain)}
-                    disabled={!canDeleteDomain(domain)}
+                    disabled={!canOpenZoneMenu(domain)}
                     sx={{ mr: 1 }}
                   >
                     <MoreVertIcon fontSize="small" />
@@ -707,7 +749,7 @@ export default function Dashboard() {
                     <IconButton
                       size="small"
                       onClick={(e) => openZoneMenu(e, domain)}
-                      disabled={!canDeleteDomain(domain)}
+                      disabled={!canOpenZoneMenu(domain)}
                     >
                       <MoreVertIcon fontSize="inherit" />
                     </IconButton>
@@ -776,17 +818,17 @@ export default function Dashboard() {
               alignItems={{ xs: 'stretch', sm: 'center' }}
               justifyContent={{ xs: 'stretch', sm: 'flex-end' }}
             >
-              {showAddZone && (
-                <Button
-                  variant="contained"
-                  startIcon={<AddIcon />}
-                  onClick={() => setAddZoneOpen(true)}
-                  disabled={currentProviderCredentials.length === 0}
-                  sx={{ whiteSpace: 'nowrap' }}
-                >
-                  添加域名
-                </Button>
-              )}
+	              {showAddZone && (
+	                <Button
+	                  variant="contained"
+	                  startIcon={<AddIcon />}
+	                  onClick={() => setAddZoneOpen(true)}
+	                  disabled={addZoneCredentials.length === 0}
+	                  sx={{ whiteSpace: 'nowrap' }}
+	                >
+	                  添加域名
+	                </Button>
+	              )}
               <Button
                 variant="outlined"
                 startIcon={<RefreshIcon />}
@@ -857,7 +899,7 @@ export default function Dashboard() {
       >
         <MenuItem onClick={openDeleteZoneDialog} disabled={!zoneMenuDomain || !canDeleteDomain(zoneMenuDomain)}>
           <DeleteIcon fontSize="small" style={{ marginRight: 8 }} />
-          从 Cloudflare 删除
+          从 {zoneMenuProviderLabel} 删除
         </MenuItem>
       </Menu>
 
@@ -866,10 +908,10 @@ export default function Dashboard() {
         <DialogContent>
           <Stack spacing={2} sx={{ mt: 1 }}>
             <Typography variant="body2">
-              确认从 Cloudflare 删除域名 <strong>{zoneMenuDomain?.name || '-'}</strong> 吗？
+              确认从 {zoneMenuProviderLabel} 删除域名 <strong>{zoneMenuDomain?.name || '-'}</strong> 吗？
             </Typography>
             <Alert severity="warning">
-              该操作会删除整个 Zone（包含所有 DNS 记录），且不可恢复。
+              该操作会删除整个域名（包含所有 DNS 记录），且不可恢复。
             </Alert>
             <TextField
               label="请输入域名以确认删除"
@@ -899,17 +941,17 @@ export default function Dashboard() {
         </DialogActions>
       </Dialog>
 
-      {showAddZone && (
-        <AddZoneDialog
-          open={addZoneOpen}
-          credentials={currentProviderCredentials}
-          initialCredentialId={initialAddCredentialId}
-          onClose={(refresh) => {
-            setAddZoneOpen(false);
-            if (refresh) refetch();
-          }}
-        />
-      )}
+	      {showAddZone && (
+	        <AddZoneDialog
+	          open={addZoneOpen}
+	          credentials={addZoneCredentials}
+	          initialCredentialId={initialAddCredentialId}
+	          onClose={(refresh) => {
+	            setAddZoneOpen(false);
+	            if (refresh) refetch();
+	          }}
+	        />
+	      )}
     </Box>
   );
 }

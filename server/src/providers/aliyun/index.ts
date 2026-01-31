@@ -70,9 +70,16 @@ interface AliyunAddDomainRecordResponse extends AliyunErrorResponse {
   RecordId?: string;
 }
 
+interface AliyunAddDomainResponse extends AliyunErrorResponse {
+  DomainId?: string;
+  DomainName?: string;
+  DnsServers?: { DnsServer?: string[] };
+}
+
 interface AliyunDescribeDomainInfoResponse extends AliyunErrorResponse {
   DomainId?: string;
   DomainName?: string;
+  DnsServers?: { DnsServer?: string[] };
   RecordLines?: {
     RecordLine?: Array<
       | string
@@ -332,11 +339,15 @@ export class AliyunProvider extends BaseProvider {
         DomainName: resolved.domainName,
       });
 
+      const nameServers = Array.isArray(info.DnsServers?.DnsServer)
+        ? info.DnsServers!.DnsServer!.filter((s): s is string => typeof s === 'string' && s.trim().length > 0)
+        : [];
+
       const zone = this.normalizeZone({
         id: info.DomainId || resolved.domainId || zoneIdOrName,
         name: info.DomainName || resolved.domainName,
         status: 'active',
-        meta: { raw: info },
+        meta: { raw: info, nameServers },
       });
       this.rememberZone({ id: zone.id, name: zone.name });
       return zone;
@@ -567,6 +578,67 @@ export class AliyunProvider extends BaseProvider {
       return 600;
     } catch {
       return 600;
+    }
+  }
+
+  async addZone(domain: string): Promise<Zone> {
+    const name = String(domain || '').trim();
+    if (!name) {
+      throw this.createError('INVALID_DOMAIN', '域名不能为空', { httpStatus: 400 });
+    }
+
+    try {
+      const resp = await this.request<AliyunAddDomainResponse>('AddDomain', {
+        DomainName: name,
+      });
+
+      const nameServers = Array.isArray(resp.DnsServers?.DnsServer)
+        ? resp.DnsServers!.DnsServer!.filter((s): s is string => typeof s === 'string' && s.trim().length > 0)
+        : [];
+
+      const zone = this.normalizeZone({
+        id: resp.DomainId || name,
+        name: resp.DomainName || name,
+        status: 'active',
+        meta: { raw: resp, nameServers },
+      });
+
+      this.rememberZone({ id: zone.id, name: zone.name });
+      return zone;
+    } catch (err: any) {
+      const code = String((err as any)?.details?.code || (err as any)?.code || '');
+      if (code === 'DomainAlreadyExist' || code.includes('AlreadyExist')) {
+        try {
+          const existing = await this.getZone(name);
+          return {
+            ...existing,
+            meta: { ...existing.meta, existed: true },
+          };
+        } catch {
+          // 忽略，抛出原始错误
+        }
+      }
+      throw this.wrapError(err);
+    }
+  }
+
+  async deleteZone(zoneIdOrName: string): Promise<boolean> {
+    const input = String(zoneIdOrName || '').trim();
+    if (!input) {
+      throw this.createError('INVALID_ZONE', 'Zone ID 或域名不能为空', { httpStatus: 400 });
+    }
+
+    try {
+      const resolved = await this.resolveDomain(input);
+      await this.request<AliyunErrorResponse>('DeleteDomain', {
+        DomainName: resolved.domainName,
+      });
+
+      this.domainIdToName.delete(resolved.domainId || input);
+      this.domainNameToId.delete(resolved.domainName);
+      return true;
+    } catch (err) {
+      throw this.wrapError(err);
     }
   }
 }

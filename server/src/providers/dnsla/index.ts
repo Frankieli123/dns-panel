@@ -437,4 +437,18 @@ export class DnslaProvider extends BaseProvider {
       throw this.wrapError(err);
     }
   }
+
+  async deleteZone(zoneId: string): Promise<boolean> {
+    const id = String(zoneId || '').trim();
+    if (!id) {
+      throw this.createError('INVALID_ZONE_ID', 'Zone ID 不能为空', { httpStatus: 400 });
+    }
+
+    try {
+      await this.request('DELETE', '/api/domain', { id });
+      return true;
+    } catch (err) {
+      throw this.wrapError(err);
+    }
+  }
 }

@@ -340,4 +340,18 @@ export class BaiduProvider extends BaseProvider {
       throw this.wrapError(err);
     }
   }
+
+  async deleteZone(zoneId: string): Promise<boolean> {
+    const name = String(zoneId || '').trim().replace(/\.$/, '');
+    if (!name) {
+      throw this.createError('INVALID_ZONE', '域名不能为空', { httpStatus: 400 });
+    }
+
+    try {
+      await this.request('DELETE', `/v1/dns/zone/${encodeURIComponent(name)}`, { clientToken: generateClientToken() });
+      return true;
+    } catch (err) {
+      throw this.wrapError(err);
+    }
+  }
 }

@@ -166,6 +166,11 @@ export class DnsService {
       return trimmed;
     }
 
+    // 对于使用非数字 ID 的提供商（如华为云 zone_id 为 UUID），若参数不像域名（不含 .），则视为 ID 直接返回
+    if (!trimmed.includes('.')) {
+      return trimmed;
+    }
+
     // 对于需要 domainId 的提供商，通过域名名称查找
     const targetName = trimmed.toLowerCase();
     const pageSize = 100;
