@@ -102,6 +102,53 @@ router.get('/', async (req, res) => {
 });
 
 /**
+ * GET /api/dns-credentials/:id/secrets
+ * 获取凭证密钥（明文）
+ */
+router.get('/:id/secrets', async (req, res) => {
+  try {
+    const userId = (req as AuthRequest).user!.id;
+    const credentialId = parseInt(req.params.id, 10);
+
+    if (!Number.isFinite(credentialId)) {
+      return errorResponse(res, '无效的凭证 ID', 400);
+    }
+
+    const credential = await prisma.dnsCredential.findFirst({
+      where: { id: credentialId, userId },
+      select: {
+        id: true,
+        secrets: true,
+      },
+    });
+
+    if (!credential) {
+      return errorResponse(res, '凭证不存在', 404);
+    }
+
+    let parsed: any;
+    try {
+      parsed = JSON.parse(decrypt(credential.secrets));
+    } catch (error: any) {
+      return errorResponse(res, error?.message || '凭证密钥解析失败', 500);
+    }
+
+    const secrets: Record<string, string> = {};
+    if (parsed && typeof parsed === 'object') {
+      for (const [k, v] of Object.entries(parsed)) {
+        if (!k) continue;
+        if (v === undefined || v === null) continue;
+        secrets[String(k)] = typeof v === 'string' ? v : String(v);
+      }
+    }
+
+    return successResponse(res, { secrets }, '获取凭证密钥成功');
+  } catch (error: any) {
+    return errorResponse(res, error?.message || '获取凭证密钥失败', 500);
+  }
+});
+
+/**
  * POST /api/dns-credentials
  * 创建新凭证
  */

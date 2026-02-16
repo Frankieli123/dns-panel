@@ -309,17 +309,22 @@ export class DnspodProvider extends BaseProvider {
               }
 
               const httpStatus = res.statusCode;
-              if (httpStatus && httpStatus >= 400) {
-                reject(this.createError('HTTP_ERROR', `HTTP 错误: ${httpStatus}`, { httpStatus, meta: { body: json } }));
-                return;
-              }
-
               const errObj = json?.Response?.Error;
               if (errObj?.Code) {
                 reject(this.createError(String(errObj.Code), String(errObj.Message || 'DNSPod API Error'), {
                   httpStatus,
                   meta: { requestId: json?.Response?.RequestId, action },
                 }));
+                return;
+              }
+
+              if (httpStatus && httpStatus >= 400) {
+                reject(
+                  this.createError('HTTP_ERROR', `HTTP 错误: ${httpStatus}`, {
+                    httpStatus,
+                    meta: { body: json, action },
+                  })
+                );
                 return;
               }
 

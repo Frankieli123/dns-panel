@@ -136,3 +136,11 @@ export async function verifyDnsCredential(id: number): Promise<ApiResponse<{ val
   const response = await api.post(`/dns-credentials/${id}/verify`);
   return response as unknown as ApiResponse<{ valid: boolean; error?: string }>;
 }
+
+/**
+ * 获取凭证密钥（明文）
+ */
+export async function getDnsCredentialSecrets(id: number): Promise<ApiResponse<{ secrets: DnsCredentialSecrets }>> {
+  const response = await api.get(`/dns-credentials/${id}/secrets`);
+  return response as unknown as ApiResponse<{ secrets: DnsCredentialSecrets }>;
+}

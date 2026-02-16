@@ -19,6 +19,7 @@ import {
   Stack,
   CircularProgress,
   Tooltip,
+  InputAdornment,
   useMediaQuery,
   useTheme
 } from '@mui/material';
@@ -28,6 +29,10 @@ import {
   Delete as DeleteIcon,
   Storage as StorageIcon,
   CheckCircle as CheckCircleIcon,
+  Key as KeyIcon,
+  ContentCopy as ContentCopyIcon,
+  Visibility as VisibilityIcon,
+  VisibilityOff as VisibilityOffIcon,
   OpenInNew as OpenInNewIcon
 } from '@mui/icons-material';
 import { useForm } from 'react-hook-form';
@@ -37,6 +42,7 @@ import {
   updateDnsCredential,
   deleteDnsCredential,
   verifyDnsCredential,
+  getDnsCredentialSecrets,
   getProviders
 } from '@/services/dnsCredentials';
 import { DnsCredential, ProviderConfig, ProviderType } from '@/types/dns';
@@ -203,6 +209,14 @@ export default function DnsCredentialManagement() {
   const [verifyResult, setVerifyResult] = useState<{ id: number; valid: boolean; message?: string } | null>(null);
   const [submitError, setSubmitError] = useState<string | null>(null);
 
+  const [secretsOpen, setSecretsOpen] = useState(false);
+  const [secretsCredential, setSecretsCredential] = useState<DnsCredential | null>(null);
+  const [secretsLoading, setSecretsLoading] = useState(false);
+  const [secretsError, setSecretsError] = useState<string | null>(null);
+  const [secretsData, setSecretsData] = useState<Record<string, string> | null>(null);
+  const [revealedKeys, setRevealedKeys] = useState<Record<string, boolean>>({});
+  const [copiedKey, setCopiedKey] = useState<string | null>(null);
+
   const {
     register,
     handleSubmit,
@@ -288,6 +302,67 @@ export default function DnsCredentialManagement() {
       setVerifyResult({ id, valid: false, message: error.message || '验证失败' });
     } finally {
       setVerifying(null);
+    }
+  };
+
+  const toErrorMessage = (error: unknown): string => {
+    if (typeof error === 'string') return error;
+    const msg = (error as any)?.message;
+    return typeof msg === 'string' && msg.trim() ? msg : String(error);
+  };
+
+  const handleOpenSecrets = async (cred: DnsCredential) => {
+    setSecretsOpen(true);
+    setSecretsCredential(cred);
+    setSecretsError(null);
+    setSecretsData(null);
+    setRevealedKeys({});
+    setCopiedKey(null);
+
+    setSecretsLoading(true);
+    try {
+      const res = await getDnsCredentialSecrets(cred.id);
+      setSecretsData(res.data?.secrets || {});
+    } catch (error) {
+      setSecretsError(toErrorMessage(error));
+    } finally {
+      setSecretsLoading(false);
+    }
+  };
+
+  const handleCloseSecrets = () => {
+    setSecretsOpen(false);
+    setSecretsCredential(null);
+    setSecretsLoading(false);
+    setSecretsError(null);
+    setSecretsData(null);
+    setRevealedKeys({});
+    setCopiedKey(null);
+  };
+
+  const handleToggleReveal = (key: string) => {
+    setRevealedKeys(prev => ({ ...prev, [key]: !prev[key] }));
+  };
+
+  const handleCopy = async (key: string, text: string) => {
+    const normalized = String(text || '');
+    try {
+      await navigator.clipboard.writeText(normalized);
+      setCopiedKey(key);
+      window.setTimeout(() => setCopiedKey(null), 1200);
+    } catch {
+      setCopiedKey(null);
+    }
+  };
+
+  const handleCopyAll = async () => {
+    if (!secretsData) return;
+    try {
+      await navigator.clipboard.writeText(JSON.stringify(secretsData, null, 2));
+      setCopiedKey('__all__');
+      window.setTimeout(() => setCopiedKey(null), 1200);
+    } catch {
+      setCopiedKey(null);
     }
   };
 
@@ -447,6 +522,11 @@ export default function DnsCredentialManagement() {
                         </IconButton>
                       </span>
                     </Tooltip>
+                    <Tooltip title="查看密钥">
+                      <IconButton size="small" onClick={() => handleOpenSecrets(cred)}>
+                        <KeyIcon fontSize="small" />
+                      </IconButton>
+                    </Tooltip>
                     <Tooltip title="编辑">
                       <IconButton size="small" onClick={() => handleOpenEdit(cred)}>
                         <EditIcon fontSize="small" />
@@ -588,6 +668,126 @@ export default function DnsCredentialManagement() {
             </Button>
           </DialogActions>
         </form>
+      </Dialog>
+
+      {/* 查看密钥对话框 */}
+      <Dialog open={secretsOpen} onClose={handleCloseSecrets} maxWidth="sm" fullWidth fullScreen={isMobile}>
+        <DialogTitle>查看密钥 {secretsCredential ? `- ${secretsCredential.name}` : ''}</DialogTitle>
+        <DialogContent>
+          <Stack spacing={2} sx={{ mt: 1 }}>
+            <Alert severity="warning">
+              密钥信息敏感，请谨慎操作。关闭弹窗后会从页面状态中清空。
+            </Alert>
+
+            {secretsLoading ? (
+              <Box display="flex" justifyContent="center" p={2}>
+                <CircularProgress size={24} />
+              </Box>
+            ) : secretsError ? (
+              <Alert severity="error">{secretsError}</Alert>
+            ) : (() => {
+              const secrets = secretsData || {};
+              const providerType = secretsCredential?.provider;
+              const providerConfig = providers.find(p => p.type === providerType);
+              const fields = providerConfig?.authFields || [];
+
+              const seen = new Set<string>();
+              const orderedKeys: string[] = [];
+              fields.forEach(f => {
+                if (secrets[f.key] !== undefined) {
+                  orderedKeys.push(f.key);
+                  seen.add(f.key);
+                }
+              });
+
+              Object.keys(secrets)
+                .filter(k => !seen.has(k))
+                .sort()
+                .forEach(k => orderedKeys.push(k));
+
+              if (orderedKeys.length === 0) {
+                return <Alert severity="info">暂无可回显的密钥数据</Alert>;
+              }
+
+              const fieldOf = (key: string) => fields.find(f => f.key === key);
+              const labelOf = (key: string): string => fieldOf(key)?.label || key;
+              const isSecretField = (key: string): boolean => {
+                const f = fieldOf(key);
+                if (f) return f.type === 'password';
+                const k = key.toLowerCase();
+                if (k.includes('secret')) return true;
+                if (k.includes('password')) return true;
+                if (k.includes('token') && !k.endsWith('id')) return true;
+                return false;
+              };
+
+              return (
+                <Stack spacing={1.5}>
+                  {orderedKeys.map(key => {
+                    const value = secrets[key] ?? '';
+                    const secretField = isSecretField(key);
+                    const revealed = secretField ? !!revealedKeys[key] : true;
+                    const copied = copiedKey === key;
+
+                    return (
+                      <TextField
+                        key={key}
+                        label={labelOf(key)}
+                        value={value}
+                        type={secretField ? (revealed ? 'text' : 'password') : 'text'}
+                        fullWidth
+                        size="small"
+                        InputProps={{
+                          readOnly: true,
+                          endAdornment: (
+                            <InputAdornment position="end">
+                              {secretField && (
+                                <Tooltip title={revealed ? '隐藏' : '显示'}>
+                                  <IconButton
+                                    size="small"
+                                    onClick={() => handleToggleReveal(key)}
+                                    edge="end"
+                                  >
+                                    {revealed ? (
+                                      <VisibilityOffIcon fontSize="small" />
+                                    ) : (
+                                      <VisibilityIcon fontSize="small" />
+                                    )}
+                                  </IconButton>
+                                </Tooltip>
+                              )}
+                              <Tooltip title={copied ? '已复制' : '复制'}>
+                                <IconButton
+                                  size="small"
+                                  onClick={() => handleCopy(key, value)}
+                                  edge="end"
+                                >
+                                  <ContentCopyIcon fontSize="small" color={copied ? 'success' : 'inherit'} />
+                                </IconButton>
+                              </Tooltip>
+                            </InputAdornment>
+                          ),
+                        }}
+                      />
+                    );
+                  })}
+                </Stack>
+              );
+            })()}
+          </Stack>
+        </DialogContent>
+        <DialogActions sx={{ px: 3, pb: 3 }}>
+          <Button onClick={handleCloseSecrets} color="inherit">
+            关闭
+          </Button>
+          <Button
+            variant="contained"
+            onClick={handleCopyAll}
+            disabled={secretsLoading || !secretsData || Object.keys(secretsData).length === 0}
+          >
+            {copiedKey === '__all__' ? '已复制' : '复制全部(JSON)'}
+          </Button>
+        </DialogActions>
       </Dialog>
 
       {/* 删除确认对话框 */}

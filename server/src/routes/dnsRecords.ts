@@ -110,7 +110,12 @@ async function getServiceContext(userId: number, credentialId?: string): Promise
 function handleProviderError(res: any, error: any) {
   if (error instanceof DnsProviderError) {
     const status = error.details.httpStatus || 400;
-    return errorResponse(res, error.message, status, error.details);
+    const code = String(error.details.code || '').trim();
+    const message =
+      code && !String(error.message || '').startsWith(`${code}:`)
+        ? `${code}: ${error.message}`
+        : error.message;
+    return errorResponse(res, message, status, error.details);
   }
   return errorResponse(res, error.message || '操作失败', 400, error);
 }

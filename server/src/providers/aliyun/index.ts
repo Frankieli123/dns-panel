@@ -159,8 +159,8 @@ export class AliyunProvider extends BaseProvider {
       throw this.createError('MISSING_CREDENTIALS', '缺少阿里云 AccessKey');
     }
 
-    this.accessKeyId = accessKeyId;
-    this.accessKeySecret = accessKeySecret;
+    this.accessKeyId = String(accessKeyId).trim();
+    this.accessKeySecret = String(accessKeySecret).trim();
   }
 
   private wrapError(err: unknown, code = 'ALIYUN_ERROR'): DnsProviderError {
@@ -201,16 +201,21 @@ export class AliyunProvider extends BaseProvider {
             }
 
             const httpStatus = res.statusCode;
-            if (httpStatus && httpStatus >= 400) {
-              reject(this.createError('HTTP_ERROR', `HTTP 错误: ${httpStatus}`, { httpStatus, meta: { body: json } }));
-              return;
-            }
-
             if (json?.Code && json?.Message) {
               reject(this.createError(String(json.Code), String(json.Message), {
                 httpStatus,
                 meta: { requestId: json.RequestId, action },
               }));
+              return;
+            }
+
+            if (httpStatus && httpStatus >= 400) {
+              reject(
+                this.createError('HTTP_ERROR', json?.Message ? String(json.Message) : `HTTP 错误: ${httpStatus}`, {
+                  httpStatus,
+                  meta: { body: json, action },
+                })
+              );
               return;
             }
 
