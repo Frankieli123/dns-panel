@@ -22,7 +22,7 @@ import {
   Settings as SettingsIcon,
   Refresh as RefreshIcon
 } from '@mui/icons-material';
-import { getDNSRecords, createDNSRecord, updateDNSRecord, deleteDNSRecord, getDNSLines, getDNSMinTTL, setDNSRecordStatus } from '@/services/dns';
+import { getDNSRecords, createDNSRecord, updateDNSRecord, deleteDNSRecord, getDNSLines, getDNSMinTTL, setDNSRecordStatus, refreshDNSRecords } from '@/services/dns';
 import DNSRecordTable from '@/components/DNSRecordTable/DNSRecordTable';
 import QuickAddForm from '@/components/QuickAddForm/QuickAddForm';
 import CustomHostnameList, { CustomHostnameListRef } from '@/components/CustomHostnameList/CustomHostnameList';
@@ -54,6 +54,8 @@ export default function DnsManagement({ zoneId, credentialId }: DnsManagementPro
 
   const queryClient = useQueryClient();
   const [showQuickAdd, setShowQuickAdd] = useState(false);
+  const [isRefreshing, setIsRefreshing] = useState(false);
+  const [refreshError, setRefreshError] = useState<string | null>(null);
 
   const {
     data,
@@ -81,11 +83,24 @@ export default function DnsManagement({ zoneId, credentialId }: DnsManagementPro
   });
 
   const handleRefresh = async () => {
-    await Promise.all([
-      refetchRecords(),
-      supportsLine ? refetchLines() : Promise.resolve(),
-      refetchMinTtl(),
-    ]);
+    if (!zoneId || isRefreshing) return;
+    setIsRefreshing(true);
+    setRefreshError(null);
+    try {
+      try {
+        await refreshDNSRecords(zoneId, credentialId);
+      } catch (err) {
+        setRefreshError(String((err as any)?.message || err));
+      }
+
+      await Promise.all([
+        refetchRecords(),
+        supportsLine ? refetchLines() : Promise.resolve(),
+        refetchMinTtl(),
+      ]);
+    } finally {
+      setIsRefreshing(false);
+    }
   };
 
   const createMutation = useMutation({
@@ -163,10 +178,10 @@ export default function DnsManagement({ zoneId, credentialId }: DnsManagementPro
                 size="small"
                 startIcon={<RefreshIcon />}
                 onClick={handleRefresh}
-                disabled={isLoading || isRecordsFetching}
+                disabled={isLoading || isRecordsFetching || isRefreshing}
                 sx={{ flex: { xs: 1, sm: 'none' } }}
               >
-                刷新
+                {isRefreshing ? '刷新中...' : '刷新'}
               </Button>
             </Stack>
           )}
@@ -197,6 +212,11 @@ export default function DnsManagement({ zoneId, credentialId }: DnsManagementPro
 
       {activeTab === 0 && (
         <>
+          {refreshError && (
+            <Alert severity="warning" sx={{ m: 2 }} onClose={() => setRefreshError(null)}>
+              {refreshError}
+            </Alert>
+          )}
           {isLoading ? (
             <Box sx={{ display: 'flex', justifyContent: 'center', alignItems: 'center', p: 3 }}>
               <CircularProgress size={24} />

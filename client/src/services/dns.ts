@@ -241,6 +241,19 @@ export const setDNSRecordStatus = async (
 };
 
 /**
+ * 刷新 DNS 记录缓存（清除服务端缓存）
+ */
+export const refreshDNSRecords = async (
+  zoneId: string,
+  credentialId?: number
+): Promise<ApiResponse> => {
+  const params: any = {};
+  if (credentialId !== undefined) params.credentialId = credentialId;
+  const response = await api.post('/dns-records/refresh', { zoneId }, { params });
+  return response as unknown as ApiResponse;
+};
+
+/**
  * 删除 DNS 记录
  */
 export const deleteDNSRecord = async (
