@@ -29,8 +29,6 @@ import {
   Delete as DeleteIcon,
   Storage as StorageIcon,
   CheckCircle as CheckCircleIcon,
-  Key as KeyIcon,
-  ContentCopy as ContentCopyIcon,
   Visibility as VisibilityIcon,
   VisibilityOff as VisibilityOffIcon,
   OpenInNew as OpenInNewIcon
@@ -209,13 +207,8 @@ export default function DnsCredentialManagement() {
   const [verifyResult, setVerifyResult] = useState<{ id: number; valid: boolean; message?: string } | null>(null);
   const [submitError, setSubmitError] = useState<string | null>(null);
 
-  const [secretsOpen, setSecretsOpen] = useState(false);
-  const [secretsCredential, setSecretsCredential] = useState<DnsCredential | null>(null);
-  const [secretsLoading, setSecretsLoading] = useState(false);
-  const [secretsError, setSecretsError] = useState<string | null>(null);
-  const [secretsData, setSecretsData] = useState<Record<string, string> | null>(null);
-  const [revealedKeys, setRevealedKeys] = useState<Record<string, boolean>>({});
-  const [copiedKey, setCopiedKey] = useState<string | null>(null);
+  const [secretsPrefillLoading, setSecretsPrefillLoading] = useState(false);
+  const [showSecretFields, setShowSecretFields] = useState<Record<string, boolean>>({});
 
   const {
     register,
@@ -259,32 +252,51 @@ export default function DnsCredentialManagement() {
   useEffect(() => {
     if (!dialogOpen || editingCredential) return;
     setValue('secrets', {});
+    setShowSecretFields({});
   }, [dialogOpen, editingCredential, selectedProviderType, setValue]);
 
   // 打开新增对话框
   const handleOpenAdd = () => {
     setEditingCredential(null);
     setSubmitError(null);
+    setSecretsPrefillLoading(false);
+    setShowSecretFields({});
     reset({ name: '', provider: 'cloudflare', secrets: {} });
     setDialogOpen(true);
   };
 
   // 打开编辑对话框
-  const handleOpenEdit = (cred: DnsCredential) => {
+  const handleOpenEdit = async (cred: DnsCredential) => {
     setEditingCredential(cred);
     setSubmitError(null);
+    setSecretsPrefillLoading(false);
+    setShowSecretFields({});
     reset({
       name: cred.name,
       provider: cred.provider,
       secrets: {}
     });
     setDialogOpen(true);
+
+    setSecretsPrefillLoading(true);
+    try {
+      const res = await getDnsCredentialSecrets(cred.id);
+      setValue('secrets', res.data?.secrets || {}, { shouldDirty: false });
+    } catch (error) {
+      setSubmitError(`加载密钥失败: ${toErrorMessage(error)}`);
+    } finally {
+      setSecretsPrefillLoading(false);
+    }
   };
 
   // 关闭对话框
   const handleCloseDialog = () => {
     setDialogOpen(false);
     setEditingCredential(null);
+    setSubmitError(null);
+    setSecretsPrefillLoading(false);
+    setShowSecretFields({});
+    reset({ name: '', provider: 'cloudflare', secrets: {} });
   };
 
   // 验证凭证
@@ -311,59 +323,8 @@ export default function DnsCredentialManagement() {
     return typeof msg === 'string' && msg.trim() ? msg : String(error);
   };
 
-  const handleOpenSecrets = async (cred: DnsCredential) => {
-    setSecretsOpen(true);
-    setSecretsCredential(cred);
-    setSecretsError(null);
-    setSecretsData(null);
-    setRevealedKeys({});
-    setCopiedKey(null);
-
-    setSecretsLoading(true);
-    try {
-      const res = await getDnsCredentialSecrets(cred.id);
-      setSecretsData(res.data?.secrets || {});
-    } catch (error) {
-      setSecretsError(toErrorMessage(error));
-    } finally {
-      setSecretsLoading(false);
-    }
-  };
-
-  const handleCloseSecrets = () => {
-    setSecretsOpen(false);
-    setSecretsCredential(null);
-    setSecretsLoading(false);
-    setSecretsError(null);
-    setSecretsData(null);
-    setRevealedKeys({});
-    setCopiedKey(null);
-  };
-
-  const handleToggleReveal = (key: string) => {
-    setRevealedKeys(prev => ({ ...prev, [key]: !prev[key] }));
-  };
-
-  const handleCopy = async (key: string, text: string) => {
-    const normalized = String(text || '');
-    try {
-      await navigator.clipboard.writeText(normalized);
-      setCopiedKey(key);
-      window.setTimeout(() => setCopiedKey(null), 1200);
-    } catch {
-      setCopiedKey(null);
-    }
-  };
-
-  const handleCopyAll = async () => {
-    if (!secretsData) return;
-    try {
-      await navigator.clipboard.writeText(JSON.stringify(secretsData, null, 2));
-      setCopiedKey('__all__');
-      window.setTimeout(() => setCopiedKey(null), 1200);
-    } catch {
-      setCopiedKey(null);
-    }
+  const handleToggleSecretVisibility = (key: string) => {
+    setShowSecretFields(prev => ({ ...prev, [key]: !prev[key] }));
   };
 
   // 提交表单
@@ -387,10 +348,12 @@ export default function DnsCredentialManagement() {
         const hasTc3Pair = Boolean(secretId && secretKey);
         const hasLegacyAny = Boolean(tokenId || token);
         const hasLegacyPair = Boolean(tokenId && token);
+        const hasLegacyCombined = Boolean(!hasLegacyPair && !tokenId && token && String(token).includes(','));
+        const hasLegacyValid = hasLegacyPair || hasLegacyCombined;
 
         if (!editingCredential) {
-          if (!hasTc3Pair && !hasLegacyPair) {
-            setSubmitError('请填写 SecretId/SecretKey 或 DNSPod Token（ID + Token），两种方式二选一');
+          if (!hasTc3Pair && !hasLegacyValid) {
+            setSubmitError('请填写 SecretId/SecretKey 或 DNSPod Token（ID + Token 或 ID,Token），两种方式二选一');
             return;
           }
         }
@@ -400,8 +363,8 @@ export default function DnsCredentialManagement() {
           return;
         }
 
-        if (hasLegacyAny && !hasLegacyPair) {
-          setSubmitError('DNSPod Token 的 ID 与 Token 需要同时填写');
+        if (hasLegacyAny && !hasLegacyValid) {
+          setSubmitError('DNSPod Token 请填写 ID + Token，或在 Token 中填入组合格式：ID,Token');
           return;
         }
       }
@@ -522,11 +485,6 @@ export default function DnsCredentialManagement() {
                         </IconButton>
                       </span>
                     </Tooltip>
-                    <Tooltip title="查看密钥">
-                      <IconButton size="small" onClick={() => handleOpenSecrets(cred)}>
-                        <KeyIcon fontSize="small" />
-                      </IconButton>
-                    </Tooltip>
                     <Tooltip title="编辑">
                       <IconButton size="small" onClick={() => handleOpenEdit(cred)}>
                         <EditIcon fontSize="small" />
@@ -595,7 +553,7 @@ export default function DnsCredentialManagement() {
                     {selectedProviderConfig.name} 认证信息
                     {editingCredential && (
                       <Typography component="span" variant="caption" color="text.secondary" sx={{ ml: 1 }}>
-                        (留空则不修改)
+                        {secretsPrefillLoading ? '(加载密钥中...)' : '(可查看/修改)'}
                       </Typography>
                     )}
                   </Typography>
@@ -613,7 +571,11 @@ export default function DnsCredentialManagement() {
 
                         <TextField
                           label={field.label}
-                          type={field.type}
+                          type={
+                            field.type === 'password'
+                              ? (showSecretFields[field.key] ? 'text' : 'password')
+                              : field.type
+                          }
                           fullWidth
                           size="small"
                           placeholder={field.placeholder}
@@ -622,6 +584,18 @@ export default function DnsCredentialManagement() {
                           })}
                           error={!!errors.secrets?.[field.key]}
                           helperText={errors.secrets?.[field.key]?.message || field.helpText}
+                          InputProps={{
+                            endAdornment: field.type === 'password' ? (
+                              <InputAdornment position="end">
+                                <IconButton
+                                  onClick={() => handleToggleSecretVisibility(field.key)}
+                                  edge="end"
+                                >
+                                  {showSecretFields[field.key] ? <VisibilityOffIcon /> : <VisibilityIcon />}
+                                </IconButton>
+                              </InputAdornment>
+                            ) : undefined,
+                          }}
                         />
                       </Fragment>
                     ))}
@@ -668,126 +642,6 @@ export default function DnsCredentialManagement() {
             </Button>
           </DialogActions>
         </form>
-      </Dialog>
-
-      {/* 查看密钥对话框 */}
-      <Dialog open={secretsOpen} onClose={handleCloseSecrets} maxWidth="sm" fullWidth fullScreen={isMobile}>
-        <DialogTitle>查看密钥 {secretsCredential ? `- ${secretsCredential.name}` : ''}</DialogTitle>
-        <DialogContent>
-          <Stack spacing={2} sx={{ mt: 1 }}>
-            <Alert severity="warning">
-              密钥信息敏感，请谨慎操作。关闭弹窗后会从页面状态中清空。
-            </Alert>
-
-            {secretsLoading ? (
-              <Box display="flex" justifyContent="center" p={2}>
-                <CircularProgress size={24} />
-              </Box>
-            ) : secretsError ? (
-              <Alert severity="error">{secretsError}</Alert>
-            ) : (() => {
-              const secrets = secretsData || {};
-              const providerType = secretsCredential?.provider;
-              const providerConfig = providers.find(p => p.type === providerType);
-              const fields = providerConfig?.authFields || [];
-
-              const seen = new Set<string>();
-              const orderedKeys: string[] = [];
-              fields.forEach(f => {
-                if (secrets[f.key] !== undefined) {
-                  orderedKeys.push(f.key);
-                  seen.add(f.key);
-                }
-              });
-
-              Object.keys(secrets)
-                .filter(k => !seen.has(k))
-                .sort()
-                .forEach(k => orderedKeys.push(k));
-
-              if (orderedKeys.length === 0) {
-                return <Alert severity="info">暂无可回显的密钥数据</Alert>;
-              }
-
-              const fieldOf = (key: string) => fields.find(f => f.key === key);
-              const labelOf = (key: string): string => fieldOf(key)?.label || key;
-              const isSecretField = (key: string): boolean => {
-                const f = fieldOf(key);
-                if (f) return f.type === 'password';
-                const k = key.toLowerCase();
-                if (k.includes('secret')) return true;
-                if (k.includes('password')) return true;
-                if (k.includes('token') && !k.endsWith('id')) return true;
-                return false;
-              };
-
-              return (
-                <Stack spacing={1.5}>
-                  {orderedKeys.map(key => {
-                    const value = secrets[key] ?? '';
-                    const secretField = isSecretField(key);
-                    const revealed = secretField ? !!revealedKeys[key] : true;
-                    const copied = copiedKey === key;
-
-                    return (
-                      <TextField
-                        key={key}
-                        label={labelOf(key)}
-                        value={value}
-                        type={secretField ? (revealed ? 'text' : 'password') : 'text'}
-                        fullWidth
-                        size="small"
-                        InputProps={{
-                          readOnly: true,
-                          endAdornment: (
-                            <InputAdornment position="end">
-                              {secretField && (
-                                <Tooltip title={revealed ? '隐藏' : '显示'}>
-                                  <IconButton
-                                    size="small"
-                                    onClick={() => handleToggleReveal(key)}
-                                    edge="end"
-                                  >
-                                    {revealed ? (
-                                      <VisibilityOffIcon fontSize="small" />
-                                    ) : (
-                                      <VisibilityIcon fontSize="small" />
-                                    )}
-                                  </IconButton>
-                                </Tooltip>
-                              )}
-                              <Tooltip title={copied ? '已复制' : '复制'}>
-                                <IconButton
-                                  size="small"
-                                  onClick={() => handleCopy(key, value)}
-                                  edge="end"
-                                >
-                                  <ContentCopyIcon fontSize="small" color={copied ? 'success' : 'inherit'} />
-                                </IconButton>
-                              </Tooltip>
-                            </InputAdornment>
-                          ),
-                        }}
-                      />
-                    );
-                  })}
-                </Stack>
-              );
-            })()}
-          </Stack>
-        </DialogContent>
-        <DialogActions sx={{ px: 3, pb: 3 }}>
-          <Button onClick={handleCloseSecrets} color="inherit">
-            关闭
-          </Button>
-          <Button
-            variant="contained"
-            onClick={handleCopyAll}
-            disabled={secretsLoading || !secretsData || Object.keys(secretsData).length === 0}
-          >
-            {copiedKey === '__all__' ? '已复制' : '复制全部(JSON)'}
-          </Button>
-        </DialogActions>
       </Dialog>
 
       {/* 删除确认对话框 */}
