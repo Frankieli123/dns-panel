@@ -34,7 +34,7 @@ import {
   Dashboard as DashboardIcon,
   History as HistoryIcon
 } from '@mui/icons-material';
-import { useState } from 'react';
+import { useEffect, useMemo, useRef, useState } from 'react';
 import { useProvider } from '@/contexts/ProviderContext';
 import { ProviderType } from '@/types/dns';
 import { useNavigate } from 'react-router-dom';
@@ -61,6 +61,60 @@ const PROVIDER_ORDER: ProviderType[] = [
   'huoshan', 'jdcloud', 'dnsla', 'namesilo', 'powerdns', 'spaceship',
 ];
 
+const PROVIDER_ORDER_STORAGE_KEY = 'dns-panel.sidebar.providerOrder.v1';
+const CANONICAL_PROVIDER_TYPES = (Object.keys(PROVIDER_CONFIG) as ProviderType[]).filter(t => t !== 'dnspod_token');
+
+const normalizeSidebarProviderType = (provider: ProviderType): ProviderType => {
+  return provider === 'dnspod_token' ? 'dnspod' : provider;
+};
+
+function isSameProviderOrder(a: ProviderType[], b: ProviderType[]): boolean {
+  if (a.length !== b.length) return false;
+  for (let i = 0; i < a.length; i++) {
+    if (a[i] !== b[i]) return false;
+  }
+  return true;
+}
+
+function readProviderOrder(): ProviderType[] {
+  if (typeof window === 'undefined') return PROVIDER_ORDER;
+  try {
+    const raw = localStorage.getItem(PROVIDER_ORDER_STORAGE_KEY);
+    if (!raw) return PROVIDER_ORDER;
+    const parsed = JSON.parse(raw);
+    if (!Array.isArray(parsed)) return PROVIDER_ORDER;
+
+    const valid = new Set(CANONICAL_PROVIDER_TYPES);
+    const out: ProviderType[] = [];
+    for (const v of parsed) {
+      const rawType = String(v || '').trim() as ProviderType;
+      const t = normalizeSidebarProviderType(rawType);
+      if (valid.has(t) && !out.includes(t)) out.push(t);
+    }
+    return out.length ? out : PROVIDER_ORDER;
+  } catch {
+    return PROVIDER_ORDER;
+  }
+}
+
+function writeProviderOrder(order: ProviderType[]) {
+  try {
+    localStorage.setItem(PROVIDER_ORDER_STORAGE_KEY, JSON.stringify(order));
+  } catch {
+    // ignore
+  }
+}
+
+function reorderProviderOrder(order: ProviderType[], active: ProviderType, over: ProviderType): ProviderType[] {
+  const from = order.indexOf(active);
+  const to = order.indexOf(over);
+  if (from < 0 || to < 0 || from === to) return order;
+  const next = order.slice();
+  const [moved] = next.splice(from, 1);
+  next.splice(to, 0, moved);
+  return next;
+}
+
 interface SidebarProps {
   onClose?: () => void;
 }
@@ -77,7 +131,33 @@ export default function Sidebar({ onClose }: SidebarProps) {
     isLoading,
   } = useProvider();
 
+  const sidebarProviders = useMemo(() => {
+    const map = new Map<ProviderType, (typeof providers)[number]>();
+    providers.forEach((p) => {
+      const type = normalizeSidebarProviderType(p.type);
+      const next = p.type === type ? p : ({ ...p, type } as (typeof providers)[number]);
+      const existing = map.get(type);
+      if (!existing || (type === 'dnspod' && p.type === 'dnspod')) {
+        map.set(type, next);
+      }
+    });
+    return Array.from(map.values());
+  }, [providers]);
+
   const [anchorEl, setAnchorEl] = useState<null | HTMLElement>(null);
+  const [providerOrder, setProviderOrder] = useState<ProviderType[]>(() => readProviderOrder());
+  const [draggingProvider, setDraggingProvider] = useState<ProviderType | null>(null);
+
+  const longPressTimerRef = useRef<number | null>(null);
+  const pressStartRef = useRef<{ x: number; y: number; type: ProviderType } | null>(null);
+  const suppressClickRef = useRef(false);
+
+  const clearLongPressTimer = () => {
+    if (longPressTimerRef.current) {
+      window.clearTimeout(longPressTimerRef.current);
+      longPressTimerRef.current = null;
+    }
+  };
 
   const handleUserMenuOpen = (event: React.MouseEvent<HTMLElement>) => {
     setAnchorEl(event.currentTarget);
@@ -98,6 +178,65 @@ export default function Sidebar({ onClose }: SidebarProps) {
     if (onClose) onClose();
   };
 
+  useEffect(() => {
+    const types = sidebarProviders.map(p => p.type);
+    if (types.length === 0) return;
+    setProviderOrder((prev) => {
+      const next = [
+        ...prev.filter(t => types.includes(t)),
+        ...types.filter(t => !prev.includes(t)),
+      ];
+      if (isSameProviderOrder(prev, next)) return prev;
+      writeProviderOrder(next);
+      return next;
+    });
+  }, [sidebarProviders]);
+
+  useEffect(() => {
+    if (!draggingProvider) return;
+
+    const handleMove = (e: PointerEvent) => {
+      const el = document.elementFromPoint(e.clientX, e.clientY) as HTMLElement | null;
+      const item = el?.closest?.('[data-provider-type]') as HTMLElement | null;
+      const over = (item?.getAttribute('data-provider-type') || '').trim() as ProviderType;
+      if (!over || over === draggingProvider) return;
+
+      setProviderOrder((prev) => {
+        const next = reorderProviderOrder(prev, draggingProvider, over);
+        if (next === prev) return prev;
+        writeProviderOrder(next);
+        return next;
+      });
+    };
+
+    const end = () => {
+      setDraggingProvider(null);
+      clearLongPressTimer();
+      pressStartRef.current = null;
+      window.setTimeout(() => {
+        suppressClickRef.current = false;
+      }, 0);
+    };
+
+    document.body.style.userSelect = 'none';
+    window.addEventListener('pointermove', handleMove);
+    window.addEventListener('pointerup', end);
+    window.addEventListener('pointercancel', end);
+    return () => {
+      document.body.style.userSelect = '';
+      window.removeEventListener('pointermove', handleMove);
+      window.removeEventListener('pointerup', end);
+      window.removeEventListener('pointercancel', end);
+    };
+  }, [draggingProvider]);
+
+  const sortedProviders = useMemo(
+    () => providerOrder
+      .map(type => sidebarProviders.find(p => p.type === type))
+      .filter((p): p is NonNullable<typeof p> => p !== undefined),
+    [providerOrder, sidebarProviders]
+  );
+
   if (isLoading) {
     return (
       <Box sx={{ p: 2 }}>
@@ -107,10 +246,6 @@ export default function Sidebar({ onClose }: SidebarProps) {
       </Box>
     );
   }
-
-  const sortedProviders = PROVIDER_ORDER
-    .map(type => providers.find(p => p.type === type))
-    .filter((p): p is NonNullable<typeof p> => p !== undefined);
 
   return (
         <Box sx={{ height: '100%', display: 'flex', flexDirection: 'column', color: 'white' }}>
@@ -286,9 +421,10 @@ export default function Sidebar({ onClose }: SidebarProps) {
                       
                                           flexGrow: 1, 
                       
-                            
+                                            
                       
                                           overflowY: 'auto',
+                                          touchAction: draggingProvider ? 'none' : 'pan-y',
                       
                                           '&::-webkit-scrollbar': { width: '4px' },
                       
@@ -317,8 +453,43 @@ export default function Sidebar({ onClose }: SidebarProps) {
                                               <Box key={provider.type} sx={{ mb: 0.8 }}>
                       
                                                 <ListItemButton
-                      
-                                                  onClick={() => hasAccounts ? handleSelectProvider(provider.type) : undefined}
+                                                  data-provider-type={provider.type}
+                                                  onPointerDown={(e) => {
+                                                    if (e.pointerType === 'mouse' && e.button !== 0) return;
+                                                    if (draggingProvider) return;
+                                                    suppressClickRef.current = false;
+                                                    pressStartRef.current = { x: e.clientX, y: e.clientY, type: provider.type };
+                                                    clearLongPressTimer();
+                                                    longPressTimerRef.current = window.setTimeout(() => {
+                                                      suppressClickRef.current = true;
+                                                      setDraggingProvider(provider.type);
+                                                    }, e.pointerType === 'touch' ? 260 : 360);
+                                                  }}
+                                                  onPointerMove={(e) => {
+                                                    if (!pressStartRef.current || draggingProvider) return;
+                                                    const dx = e.clientX - pressStartRef.current.x;
+                                                    const dy = e.clientY - pressStartRef.current.y;
+                                                    if (dx * dx + dy * dy > 64) {
+                                                      clearLongPressTimer();
+                                                      pressStartRef.current = null;
+                                                    }
+                                                  }}
+                                                  onPointerUp={() => {
+                                                    clearLongPressTimer();
+                                                    pressStartRef.current = null;
+                                                  }}
+                                                  onPointerCancel={() => {
+                                                    clearLongPressTimer();
+                                                    pressStartRef.current = null;
+                                                  }}
+                                                  onClick={(e) => {
+                                                    if (suppressClickRef.current) {
+                                                      e.preventDefault();
+                                                      e.stopPropagation();
+                                                      return;
+                                                    }
+                                                    if (hasAccounts) handleSelectProvider(provider.type);
+                                                  }}
                       
                                                   sx={{
                       
@@ -337,6 +508,7 @@ export default function Sidebar({ onClose }: SidebarProps) {
                                                     color: isSelected ? 'white' : 'rgba(255,255,255,0.75)',
                       
                                                     transition: 'all 0.2s ease',
+                                                    userSelect: 'none',
                       
                                                     '&:hover': {
                       
@@ -350,9 +522,9 @@ export default function Sidebar({ onClose }: SidebarProps) {
                       
                                                     },
                       
-                                                    opacity: hasAccounts ? 1 : 0.5,
+                                                    opacity: draggingProvider === provider.type ? 0.7 : (hasAccounts ? 1 : 0.5),
                       
-                                                    cursor: hasAccounts ? 'pointer' : 'default',
+                                                    cursor: draggingProvider === provider.type ? 'grabbing' : (hasAccounts ? 'pointer' : 'default'),
                       
                                                   }}
                       
