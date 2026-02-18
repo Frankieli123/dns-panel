@@ -436,14 +436,26 @@ export default function DNSRecordTable({
                 <Typography variant="subtitle2" fontWeight="600" sx={{ wordBreak: 'break-all', lineHeight: 1.2, flexGrow: 1 }}>
                   {record.name}
                 </Typography>
-                {showStatus && (
+                <Stack direction="row" spacing={0.5} alignItems="center" sx={{ ml: 'auto', flexShrink: 0 }}>
+                  {showProxied && (
+                    <Chip
+                      size="small"
+                      variant="outlined"
+                      icon={record.proxied ? <CloudIcon sx={{ fontSize: 14 }} /> : <CloudQueueIcon sx={{ fontSize: 14 }} />}
+                      label={record.proxied ? '已代理' : '仅 DNS'}
+                      color={record.proxied ? 'info' : 'default'}
+                      sx={{ height: 20, fontSize: '0.68rem', '& .MuiChip-label': { px: 0.75 } }}
+                    />
+                  )}
+                  {showStatus && (
                     <Switch
                       checked={record.enabled !== false}
                       onChange={() => handleStatusToggle(record)}
                       size="small"
                       sx={{ transform: 'scale(0.8)', mr: -1 }}
                     />
-                )}
+                  )}
+                </Stack>
               </Stack>
               
               <Typography 

@@ -514,137 +514,155 @@ export default function DnsCredentialManagement() {
       </CardContent>
 
       {/* 新增/编辑对话框 */}
-      <Dialog open={dialogOpen} onClose={handleCloseDialog} maxWidth="md" fullWidth fullScreen={isMobile}>
+      <Dialog
+        open={dialogOpen}
+        onClose={handleCloseDialog}
+        maxWidth="md"
+        fullWidth
+        fullScreen={isMobile}
+        PaperProps={{
+          component: 'form',
+          onSubmit: handleSubmit(onSubmit),
+          sx: {
+            overflow: 'hidden',
+          },
+        }}
+      >
         <DialogTitle>{editingCredential ? '编辑账户' : '新增账户'}</DialogTitle>
-        <form onSubmit={handleSubmit(onSubmit)}>
-          <DialogContent>
-            <Stack spacing={3}>
-              {submitError && (
-                <Alert severity="error">{submitError}</Alert>
-              )}
+        <DialogContent
+          sx={{
+            pr: 1.5,
+            '&::-webkit-scrollbar-track': {
+              margin: '10px 0',
+            },
+          }}
+        >
+          <Stack spacing={3}>
+            {submitError && (
+              <Alert severity="error">{submitError}</Alert>
+            )}
 
-              <TextField
-                label="账户别名"
-                fullWidth
-                placeholder="例如：个人域名、公司 DNS"
-                {...register('name', { required: '请输入账户别名' })}
-                error={!!errors.name}
-                helperText={errors.name?.message}
-              />
+            <TextField
+              label="账户别名"
+              fullWidth
+              placeholder="例如：个人域名、公司 DNS"
+              {...register('name', { required: '请输入账户别名' })}
+              error={!!errors.name}
+              helperText={errors.name?.message}
+            />
 
-              {!editingCredential && (
-                <Box>
-                  <Typography variant="subtitle2" gutterBottom sx={{ mb: 1.5 }}>
-                    选择 DNS 服务商
-                  </Typography>
-                  <Box>
-                    <ProviderSelector
-                      providers={providers}
-                      selectedProvider={selectedProviderType}
-                      onSelect={(provider) => setValue('provider', provider)}
-                    />
-                  </Box>
-                </Box>
-              )}
-
-              {selectedProviderConfig && (
-                <Box sx={{ p: 2, bgcolor: 'background.default', borderRadius: 1 }}>
-                  <Typography variant="subtitle2" gutterBottom color="primary">
-                    {selectedProviderConfig.name} 认证信息
-                    {editingCredential && (
-                      <Typography component="span" variant="caption" color="text.secondary" sx={{ ml: 1 }}>
-                        {secretsPrefillLoading ? '(加载密钥中...)' : '(可查看/修改)'}
-                      </Typography>
-                    )}
-                  </Typography>
-
-                  <Stack spacing={2} mt={1}>
-                    {selectedProviderConfig.authFields.map((field) => (
-                      <Fragment key={field.key}>
-                        {selectedProviderType === 'dnspod' && field.key === 'tokenId' && (
-                          <Divider textAlign="left" sx={{ my: 1.5, opacity: 0.8 }}>
-                            <Typography variant="caption" color="text.secondary">
-                              DNSPod Token 认证
-                            </Typography>
-                          </Divider>
-                        )}
-
-                        <TextField
-                          label={field.label}
-                          type={
-                            field.type === 'password'
-                              ? (showSecretFields[field.key] ? 'text' : 'password')
-                              : field.type
-                          }
-                          fullWidth
-                          size="small"
-                          placeholder={field.placeholder}
-                          {...register(`secrets.${field.key}`, {
-                            required: editingCredential ? false : (field.required && '此项必填')
-                          })}
-                          error={!!errors.secrets?.[field.key]}
-                          helperText={errors.secrets?.[field.key]?.message || field.helpText}
-                          InputLabelProps={{
-                            shrink: secretValues && (secretValues as any)[field.key] ? true : undefined,
-                          }}
-                          InputProps={{
-                            endAdornment: field.type === 'password' ? (
-                              <InputAdornment position="end">
-                                <IconButton
-                                  onClick={() => handleToggleSecretVisibility(field.key)}
-                                  edge="end"
-                                >
-                                  {showSecretFields[field.key] ? <VisibilityOffIcon /> : <VisibilityIcon />}
-                                </IconButton>
-                              </InputAdornment>
-                            ) : undefined,
-                          }}
-                        />
-                      </Fragment>
-                    ))}
-                  </Stack>
-                </Box>
-              )}
-
-              <Alert severity="info" sx={{ mt: 1 }}>
-                <Typography variant="subtitle2" fontWeight="bold" gutterBottom>
-                  {PROVIDER_CREDENTIAL_GUIDE[selectedProviderType]?.title || '获取凭证'}
+            {!editingCredential && (
+              <Box>
+                <Typography variant="subtitle2" gutterBottom sx={{ mb: 1.5 }}>
+                  选择 DNS 服务商
                 </Typography>
-                <Box component="ol" sx={{ m: 0, pl: 2.5 }}>
-                  {PROVIDER_CREDENTIAL_GUIDE[selectedProviderType]?.steps.map((step, index) => (
-                    <Typography component="li" variant="body2" key={index} sx={{ mb: 0.5 }}>
-                      {step}
-                    </Typography>
-                  ))}
+                <Box>
+                  <ProviderSelector
+                    providers={providers}
+                    selectedProvider={selectedProviderType}
+                    onSelect={(provider) => setValue('provider', provider)}
+                  />
                 </Box>
-                {PROVIDER_CREDENTIAL_GUIDE[selectedProviderType]?.link && (
-                  <Button
-                    size="small"
-                    startIcon={<OpenInNewIcon />}
-                    href={PROVIDER_CREDENTIAL_GUIDE[selectedProviderType].link}
-                    target="_blank"
-                    rel="noopener noreferrer"
-                    sx={{ mt: 1, textTransform: 'none' }}
-                  >
-                    前往获取
-                  </Button>
-                )}
-              </Alert>
-            </Stack>
-          </DialogContent>
-          <DialogActions sx={{ px: 3, pb: 3 }}>
-            <Button onClick={handleCloseDialog} color="inherit">
-              取消
-            </Button>
-            <Button
-              type="submit"
-              variant="contained"
-              disabled={isSubmitting}
-            >
-              {isSubmitting ? <CircularProgress size={24} color="inherit" /> : '保存'}
-            </Button>
-          </DialogActions>
-        </form>
+              </Box>
+            )}
+
+            {selectedProviderConfig && (
+              <Box sx={{ p: 2, bgcolor: 'background.default', borderRadius: 1 }}>
+                <Typography variant="subtitle2" gutterBottom color="primary">
+                  {selectedProviderConfig.name} 认证信息
+                  {editingCredential && (
+                    <Typography component="span" variant="caption" color="text.secondary" sx={{ ml: 1 }}>
+                      {secretsPrefillLoading ? '(加载密钥中...)' : '(可查看/修改)'}
+                    </Typography>
+                  )}
+                </Typography>
+
+                <Stack spacing={2} mt={1}>
+                  {selectedProviderConfig.authFields.map((field) => (
+                    <Fragment key={field.key}>
+                      {selectedProviderType === 'dnspod' && field.key === 'tokenId' && (
+                        <Divider textAlign="left" sx={{ my: 1.5, opacity: 0.8 }}>
+                          <Typography variant="caption" color="text.secondary">
+                            DNSPod Token 认证
+                          </Typography>
+                        </Divider>
+                      )}
+
+                      <TextField
+                        label={field.label}
+                        type={
+                          field.type === 'password'
+                            ? (showSecretFields[field.key] ? 'text' : 'password')
+                            : field.type
+                        }
+                        fullWidth
+                        size="small"
+                        placeholder={field.placeholder}
+                        {...register(`secrets.${field.key}`, {
+                          required: editingCredential ? false : (field.required && '此项必填')
+                        })}
+                        error={!!errors.secrets?.[field.key]}
+                        helperText={errors.secrets?.[field.key]?.message || field.helpText}
+                        InputLabelProps={{
+                          shrink: secretValues && (secretValues as any)[field.key] ? true : undefined,
+                        }}
+                        InputProps={{
+                          endAdornment: field.type === 'password' ? (
+                            <InputAdornment position="end">
+                              <IconButton
+                                onClick={() => handleToggleSecretVisibility(field.key)}
+                                edge="end"
+                              >
+                                {showSecretFields[field.key] ? <VisibilityOffIcon /> : <VisibilityIcon />}
+                              </IconButton>
+                            </InputAdornment>
+                          ) : undefined,
+                        }}
+                      />
+                    </Fragment>
+                  ))}
+                </Stack>
+              </Box>
+            )}
+
+            <Alert severity="info" sx={{ mt: 1 }}>
+              <Typography variant="subtitle2" fontWeight="bold" gutterBottom>
+                {PROVIDER_CREDENTIAL_GUIDE[selectedProviderType]?.title || '获取凭证'}
+              </Typography>
+              <Box component="ol" sx={{ m: 0, pl: 2.5 }}>
+                {PROVIDER_CREDENTIAL_GUIDE[selectedProviderType]?.steps.map((step, index) => (
+                  <Typography component="li" variant="body2" key={index} sx={{ mb: 0.5 }}>
+                    {step}
+                  </Typography>
+                ))}
+              </Box>
+              {PROVIDER_CREDENTIAL_GUIDE[selectedProviderType]?.link && (
+                <Button
+                  size="small"
+                  startIcon={<OpenInNewIcon />}
+                  href={PROVIDER_CREDENTIAL_GUIDE[selectedProviderType].link}
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  sx={{ mt: 1, textTransform: 'none' }}
+                >
+                  前往获取
+                </Button>
+              )}
+            </Alert>
+          </Stack>
+        </DialogContent>
+        <DialogActions sx={{ px: 3, pb: 3 }}>
+          <Button onClick={handleCloseDialog} color="inherit">
+            取消
+          </Button>
+          <Button
+            type="submit"
+            variant="contained"
+            disabled={isSubmitting}
+          >
+            {isSubmitting ? <CircularProgress size={24} color="inherit" /> : '保存'}
+          </Button>
+        </DialogActions>
       </Dialog>
 
       {/* 删除确认对话框 */}

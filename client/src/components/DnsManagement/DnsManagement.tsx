@@ -151,7 +151,7 @@ export default function DnsManagement({ zoneId, credentialId }: DnsManagementPro
         justifyContent="space-between" 
         alignItems={{ xs: 'stretch', sm: 'center' }} 
         spacing={{ xs: 2, sm: 0 }}
-        sx={{ borderBottom: { xs: 0, sm: 1 }, borderColor: 'divider', mb: 2 }}
+        sx={{ borderBottom: { xs: 'none', sm: '1px solid rgba(0, 0, 0, 0.12)' }, mb: 2 }}
       >
         <Tabs value={activeTab} onChange={handleTabChange} sx={{ borderBottom: 0, minHeight: { xs: 40, sm: 48 } }}>
           <Tab label="DNS 记录" sx={{ minHeight: { xs: 40, sm: 48 }, py: 1 }} />
