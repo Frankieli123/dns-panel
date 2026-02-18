@@ -151,6 +151,38 @@ export async function deleteEsaSite(params: {
   return response as unknown as ApiResponse<{ deleted: boolean }>;
 }
 
+export async function updateEsaSitePause(data: {
+  credentialId: number;
+  siteId: string;
+  siteName?: string;
+  paused: boolean;
+  region?: string;
+}): Promise<ApiResponse<{ updated: boolean }>> {
+  const response = await api.post(`/aliyun-esa/sites/${encodeURIComponent(data.siteId)}/pause`, data);
+  return response as unknown as ApiResponse<{ updated: boolean }>;
+}
+
+export async function listEsaSiteTags(params: {
+  credentialId: number;
+  siteId: string;
+  regionId?: string;
+  region?: string;
+}): Promise<ApiResponse<{ tags: Record<string, string> }>> {
+  const response = await api.get(`/aliyun-esa/sites/${encodeURIComponent(params.siteId)}/tags`, { params });
+  return response as unknown as ApiResponse<{ tags: Record<string, string> }>;
+}
+
+export async function updateEsaSiteTags(data: {
+  credentialId: number;
+  siteId: string;
+  tags: Record<string, unknown>;
+  regionId?: string;
+  region?: string;
+}): Promise<ApiResponse<{ updated: boolean }>> {
+  const response = await api.put(`/aliyun-esa/sites/${encodeURIComponent(data.siteId)}/tags`, data);
+  return response as unknown as ApiResponse<{ updated: boolean }>;
+}
+
 export async function listEsaRecords(params: {
   credentialId: number;
   siteId: string;

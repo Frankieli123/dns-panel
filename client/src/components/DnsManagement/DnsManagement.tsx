@@ -13,8 +13,6 @@ import {
   Stack,
   Tabs,
   Tab,
-  useTheme,
-  useMediaQuery,
 } from '@mui/material';
 import { 
   Add as AddIcon, 
@@ -40,8 +38,6 @@ interface DnsManagementProps {
 export default function DnsManagement({ zoneId, credentialId }: DnsManagementProps) {
   const [activeTab, setActiveTab] = useState(0);
   const { selectedProvider, credentials, getProviderCapabilities } = useProvider();
-  const theme = useTheme();
-  const isMobile = useMediaQuery(theme.breakpoints.down('sm'));
 
   const credentialProvider = (typeof credentialId === 'number'
     ? credentials.find(c => c.id === credentialId)?.provider
@@ -146,6 +142,7 @@ export default function DnsManagement({ zoneId, credentialId }: DnsManagementPro
   const records = data?.data?.records || [];
   const lines = linesData?.data?.lines || [];
   const minTTL = minTtlData?.data?.minTTL;
+  const quickAddFormId = `dns-quick-add-form-${zoneId}-${credentialId ?? 'default'}`;
 
   return (
     <Box sx={{ py: { xs: 1, sm: 2 }, px: { xs: 2, sm: 6 }, bgcolor: 'background.default', width: '100%', maxWidth: '100%', overflow: 'hidden' }}>
@@ -154,7 +151,7 @@ export default function DnsManagement({ zoneId, credentialId }: DnsManagementPro
         justifyContent="space-between" 
         alignItems={{ xs: 'stretch', sm: 'center' }} 
         spacing={{ xs: 2, sm: 0 }}
-        sx={{ borderBottom: 1, borderColor: 'divider', mb: 2 }}
+        sx={{ borderBottom: { xs: 0, sm: 1 }, borderColor: 'divider', mb: 2 }}
       >
         <Tabs value={activeTab} onChange={handleTabChange} sx={{ borderBottom: 0, minHeight: { xs: 40, sm: 48 } }}>
           <Tab label="DNS 记录" sx={{ minHeight: { xs: 40, sm: 48 }, py: 1 }} />
@@ -247,9 +244,8 @@ export default function DnsManagement({ zoneId, credentialId }: DnsManagementPro
             onClose={() => setShowQuickAdd(false)} 
             maxWidth="md" 
             fullWidth
-            fullScreen={isMobile}
             PaperProps={{
-              sx: { borderRadius: isMobile ? 0 : 2 }
+              sx: { borderRadius: 2 }
             }}
           >
             <DialogTitle sx={{ borderBottom: 1, borderColor: 'divider', pb: 2 }}>
@@ -260,8 +256,8 @@ export default function DnsManagement({ zoneId, credentialId }: DnsManagementPro
             </DialogTitle>
             <DialogContent sx={{ mt: 2 }}>
               <QuickAddForm
+                formId={quickAddFormId}
                 onSubmit={(params) => createMutation.mutate(params)}
-                loading={createMutation.isPending}
                 lines={lines}
                 minTTL={minTTL}
                 providerType={credentialProvider}
@@ -269,6 +265,14 @@ export default function DnsManagement({ zoneId, credentialId }: DnsManagementPro
             </DialogContent>
             <DialogActions sx={{ px: 3, pb: 3 }}>
               <Button onClick={() => setShowQuickAdd(false)} color="inherit">取消</Button>
+              <Button
+                type="submit"
+                form={quickAddFormId}
+                variant="contained"
+                disabled={createMutation.isPending}
+              >
+                {createMutation.isPending ? '添加中...' : '添加'}
+              </Button>
             </DialogActions>
           </Dialog>
         </>

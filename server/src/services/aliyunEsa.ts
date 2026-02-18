@@ -100,6 +100,7 @@ interface EsaErrorResponse {
 
 const ESA_VERSION = '2024-09-10';
 const DEFAULT_REGION = 'cn-hangzhou';
+const TAG_BATCH_SIZE = 20;
 
 function esaEndpoint(region?: string): string {
   const r = String(region || DEFAULT_REGION).trim();
@@ -112,6 +113,11 @@ function normalizeEsaErrorMessage(code?: string, message?: string): string {
   if (!c) return m || 'ESA 请求失败';
   if (!m) return c;
   return `${c}: ${m}`;
+}
+
+function normalizeEsaJsonRaw(raw: string): string {
+  if (!raw) return raw;
+  return raw.replace(/"(SiteId|RecordId|ConfigId|CertificateId|CasId|Id)"\s*:\s*(\d{16,})/g, '"$1":"$2"');
 }
 
 async function requestEsa<T>(
@@ -147,7 +153,7 @@ async function requestEsa<T>(
             let json: any;
 
             try {
-              json = raw ? JSON.parse(raw) : {};
+              json = raw ? JSON.parse(normalizeEsaJsonRaw(raw)) : {};
             } catch (e) {
               reject(new Error('ESA 返回非 JSON 响应'));
               return;
@@ -393,6 +399,186 @@ export async function deleteEsaSite(
     deleted: true,
     requestId: resp?.RequestId ? String(resp.RequestId) : undefined,
   };
+}
+
+export async function updateEsaSitePause(
+  auth: AliyunAuth,
+  input: { region?: string; siteId: string; paused: boolean }
+): Promise<{ updated: boolean; requestId?: string }> {
+  const regionId = String(input.region || DEFAULT_REGION).trim() || DEFAULT_REGION;
+  const pausedValue = input.paused ? 'true' : 'false';
+  const tried = new Set<string>();
+  let lastError: any;
+
+  const candidates = [
+    { SiteId: input.siteId, Paused: pausedValue, RegionId: regionId },
+    { SiteId: input.siteId, Paused: pausedValue },
+  ];
+
+  for (const params of candidates) {
+    const key = JSON.stringify(params);
+    if (tried.has(key)) continue;
+    tried.add(key);
+    try {
+      const resp: any = await requestEsa<any>(auth, 'UpdateSitePause', params, { region: input.region });
+      return {
+        updated: true,
+        requestId: resp?.RequestId ? String(resp.RequestId) : undefined,
+      };
+    } catch (error: any) {
+      lastError = error;
+      const code = String(error?.code || '').trim();
+      if (code !== 'InvalidParameter.ArgValue' && code !== 'InvalidPaused') {
+        throw error;
+      }
+    }
+  }
+
+  throw lastError || new Error('更新 ESA 站点状态失败');
+}
+
+function chunkArray<T>(items: T[], size: number): T[][] {
+  const out: T[][] = [];
+  const n = Math.max(1, Math.floor(size));
+  for (let i = 0; i < items.length; i += n) {
+    out.push(items.slice(i, i + n));
+  }
+  return out;
+}
+
+function buildNumberedParams(prefix: string, values: string[]): Record<string, string> {
+  const params: Record<string, string> = {};
+  values.forEach((v, idx) => {
+    params[`${prefix}.${idx + 1}`] = v;
+  });
+  return params;
+}
+
+function buildTagParams(tags: Array<{ key: string; value?: string }>): Record<string, string> {
+  const params: Record<string, string> = {};
+  tags.forEach((t, idx) => {
+    const i = idx + 1;
+    params[`Tag.${i}.Key`] = t.key;
+    if (t.value !== undefined) params[`Tag.${i}.Value`] = t.value;
+  });
+  return params;
+}
+
+function normalizeTagMap(tags: unknown): Record<string, string> {
+  const raw = tags && typeof tags === 'object' ? (tags as Record<string, unknown>) : {};
+  const out: Record<string, string> = {};
+  Object.entries(raw).forEach(([k, v]) => {
+    const key = String(k || '').trim();
+    if (!key) return;
+    const value = v === undefined || v === null ? '' : String(v);
+    out[key] = value;
+  });
+  return out;
+}
+
+export async function listEsaSiteTags(
+  auth: AliyunAuth,
+  input: { regionId?: string; siteId: string }
+): Promise<{ tags: Record<string, string>; requestId?: string }> {
+  const regionId = String(input.regionId || DEFAULT_REGION).trim() || DEFAULT_REGION;
+  const siteId = String(input.siteId || '').trim();
+  if (!siteId) return { tags: {} };
+
+  const resp: any = await requestEsa<any>(
+    auth,
+    'ListTagResources',
+    {
+      RegionId: regionId,
+      ResourceType: 'site',
+      ...buildNumberedParams('ResourceId', [siteId]),
+    },
+    { region: regionId }
+  );
+
+  const tags: Record<string, string> = {};
+  const list = Array.isArray(resp?.TagResources) ? resp.TagResources : [];
+  list.forEach((r: any) => {
+    const k = String(r?.TagKey || '').trim();
+    if (!k) return;
+    tags[k] = r?.TagValue === undefined || r?.TagValue === null ? '' : String(r.TagValue);
+  });
+
+  return {
+    tags,
+    requestId: resp?.RequestId ? String(resp.RequestId) : undefined,
+  };
+}
+
+export async function updateEsaSiteTags(
+  auth: AliyunAuth,
+  input: { regionId?: string; siteId: string; tags: Record<string, unknown> }
+): Promise<{ updated: boolean; requestId?: string }> {
+  const regionId = String(input.regionId || DEFAULT_REGION).trim() || DEFAULT_REGION;
+  const siteId = String(input.siteId || '').trim();
+  if (!siteId) return { updated: false };
+
+  const nextTags = normalizeTagMap(input.tags);
+
+  const current = await listEsaSiteTags(auth, { regionId, siteId });
+  const currentTags = current.tags || {};
+
+  const currentKeys = new Set(Object.keys(currentTags));
+  const nextKeys = new Set(Object.keys(nextTags));
+
+  const keysToRemove = Array.from(currentKeys).filter((k) => !nextKeys.has(k));
+  const tagsToUpsert = Object.entries(nextTags).map(([key, value]) => ({ key, value }));
+
+  let requestId: string | undefined = current.requestId;
+
+  if (tagsToUpsert.length === 0) {
+    const resp: any = await requestEsa<any>(
+      auth,
+      'UntagResources',
+      {
+        RegionId: regionId,
+        ResourceType: 'site',
+        ...buildNumberedParams('ResourceId', [siteId]),
+        All: 'true',
+      },
+      { region: regionId }
+    );
+    requestId = resp?.RequestId ? String(resp.RequestId) : requestId;
+    return { updated: true, requestId };
+  }
+
+  if (keysToRemove.length > 0) {
+    for (const batch of chunkArray(keysToRemove, TAG_BATCH_SIZE)) {
+      const resp: any = await requestEsa<any>(
+        auth,
+        'UntagResources',
+        {
+          RegionId: regionId,
+          ResourceType: 'site',
+          ...buildNumberedParams('ResourceId', [siteId]),
+          ...buildNumberedParams('TagKey', batch),
+        },
+        { region: regionId }
+      );
+      requestId = resp?.RequestId ? String(resp.RequestId) : requestId;
+    }
+  }
+
+  for (const batch of chunkArray(tagsToUpsert, TAG_BATCH_SIZE)) {
+    const resp: any = await requestEsa<any>(
+      auth,
+      'TagResources',
+      {
+        RegionId: regionId,
+        ResourceType: 'site',
+        ...buildNumberedParams('ResourceId', [siteId]),
+        ...buildTagParams(batch),
+      },
+      { region: regionId }
+    );
+    requestId = resp?.RequestId ? String(resp.RequestId) : requestId;
+  }
+
+  return { updated: true, requestId };
 }
 
 export async function listEsaRecords(

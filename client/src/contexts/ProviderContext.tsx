@@ -96,6 +96,11 @@ export function ProviderProvider({ children }: { children: ReactNode }) {
         if (nextCredential !== null) {
           localStorage.setItem(STORAGE_KEY_CREDENTIAL, String(nextCredential));
         }
+      } else {
+        setSelectedProvider(null);
+        setSelectedCredentialId(null);
+        localStorage.removeItem(STORAGE_KEY_PROVIDER);
+        localStorage.removeItem(STORAGE_KEY_CREDENTIAL);
       }
     } catch (err: any) {
       setError(err?.message || '加载数据失败');

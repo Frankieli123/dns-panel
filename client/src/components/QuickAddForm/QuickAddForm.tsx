@@ -4,7 +4,6 @@ import {
   Box,
   TextField,
   MenuItem,
-  Button,
   FormControlLabel,
   Switch,
   Collapse,
@@ -17,10 +16,10 @@ import { ProviderCapabilities, DnsLine, ProviderType } from '@/types/dns';
 
 interface QuickAddFormProps {
   onSubmit: (data: any) => void;
-  loading?: boolean;
   lines?: DnsLine[];
   minTTL?: number;
   providerType?: ProviderType;
+  formId?: string;
 }
 
 interface FormData {
@@ -39,7 +38,7 @@ interface FormData {
  * 快速添加 DNS 记录表单
  * 根据当前供应商能力动态显示字段
  */
-export default function QuickAddForm({ onSubmit, loading, lines = [], minTTL, providerType }: QuickAddFormProps) {
+export default function QuickAddForm({ onSubmit, lines = [], minTTL, providerType, formId }: QuickAddFormProps) {
   const { selectedProvider, currentCapabilities, getProviderCapabilities } = useProvider();
 
   const {
@@ -155,7 +154,7 @@ export default function QuickAddForm({ onSubmit, loading, lines = [], minTTL, pr
   };
 
   return (
-    <Box component="form" onSubmit={handleSubmit(handleFormSubmit)} sx={{ mt: 2 }}>
+    <Box id={formId} component="form" onSubmit={handleSubmit(handleFormSubmit)} sx={{ mt: 2 }}>
       <Box sx={{ display: 'flex', gap: 2, flexWrap: 'wrap', alignItems: 'flex-start' }}>
         {/* 记录类型 */}
         <Controller
@@ -319,15 +318,6 @@ export default function QuickAddForm({ onSubmit, loading, lines = [], minTTL, pr
           />
         )}
 
-        {/* 提交按钮 */}
-        <Button
-          type="submit"
-          variant="contained"
-          disabled={loading}
-          sx={{ minWidth: 80, height: 40 }}
-        >
-          {loading ? '添加中...' : '添加'}
-        </Button>
       </Box>
 
       {/* 备注 (支持的供应商) */}

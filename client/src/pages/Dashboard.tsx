@@ -41,6 +41,8 @@ import {
   CheckCircle as ActiveIcon,
   Pending as PendingIcon,
   Error as ErrorIcon,
+  PauseCircleOutline as PauseIcon,
+  PlayCircleOutline as ResumeIcon,
   KeyboardArrowDown as KeyboardArrowDownIcon,
   KeyboardArrowUp as KeyboardArrowUpIcon,
   Business as BusinessIcon,
@@ -59,12 +61,13 @@ import {
   CloudDone as JdcloudIcon,
   Dns as DnslaIcon,
   Label as NamesiloIcon,
+  LocalOfferOutlined as TagIcon,
   PowerSettingsNew as PowerdnsIcon,
   RocketLaunch as SpaceshipIcon,
   Security as EsaIcon,
 } from '@mui/icons-material';
 import { deleteZone, getDomains, refreshDomains } from '@/services/domains';
-import { ESA_SUPPORTED_REGIONS, listEsaSites } from '@/services/aliyunEsa';
+import { deleteEsaSite, ESA_SUPPORTED_REGIONS, listEsaSites, updateEsaSitePause, updateEsaSiteTags } from '@/services/aliyunEsa';
 import { getStoredUser } from '@/services/auth';
 import { lookupDomainExpiry } from '@/services/domainExpiry';
 import { formatRelativeTime } from '@/utils/formatters';
@@ -287,16 +290,18 @@ export default function Dashboard() {
             throw errors[0];
           }
 
-          return Array.from(
-            new Map(
-              allSites
-                .map((s: any) => ({
-                  ...s,
-                  siteId: s?.siteId === undefined || s?.siteId === null ? (s?.SiteId ?? '') : s.siteId,
-                }))
-                .map((s: any) => [String(s?.siteId || '').trim(), s])
-            ).values()
-          ).filter((s: any) => String(s?.siteId || '').trim());
+          const deduped = new Map<string, any>();
+          allSites
+            .map((s: any) => ({
+              ...s,
+              siteId: s?.siteId === undefined || s?.siteId === null ? (s?.SiteId ?? '') : s.siteId,
+            }))
+            .forEach((s: any) => {
+              const key = String(s?.siteId || '').trim();
+              if (!key || deduped.has(key)) return;
+              deduped.set(key, s);
+            });
+          return Array.from(deduped.values()).filter((s: any) => String(s?.siteId || '').trim());
         };
 
         const toDomains = (sites: any[], cred: { id: number; name?: string; provider?: ProviderType }) =>
@@ -315,6 +320,10 @@ export default function Dashboard() {
                 provider: cred.provider,
                 region: typeof s?.region === 'string' ? s.region : undefined,
                 accessType: typeof s?.accessType === 'string' ? s.accessType : undefined,
+                coverage:
+                  typeof s?.coverage === 'string'
+                    ? s.coverage
+                    : (s?.Coverage === undefined || s?.Coverage === null ? undefined : String(s.Coverage)),
                 instanceId:
                   typeof s?.instanceId === 'string'
                     ? s.instanceId
@@ -327,6 +336,7 @@ export default function Dashboard() {
                   typeof s?.planSpecName === 'string'
                     ? s.planSpecName
                     : (s?.PlanSpecName === undefined || s?.PlanSpecName === null ? undefined : String(s.PlanSpecName)),
+                tags: s?.tags && typeof s.tags === 'object' ? s.tags : undefined,
               } as Domain;
             })
             .filter((d): d is Domain => !!d);
@@ -553,7 +563,7 @@ export default function Dashboard() {
     }
 
     if (s === 'active') {
-      return { label: '已激活', color: 'success' as const, icon: <ActiveIcon fontSize="small" /> };
+      return { label: '已启用', color: 'success' as const, icon: <ActiveIcon fontSize="small" /> };
     }
     if (s === 'pending') {
       return { label: '待验证', color: 'warning' as const, icon: <PendingIcon fontSize="small" /> };
@@ -562,13 +572,13 @@ export default function Dashboard() {
       return { label: '已迁出', color: 'error' as const, icon: <ErrorIcon fontSize="small" /> };
     }
     if (s === 'enable' || s === 'enabled' || s === 'enableing' || s === 'running' || s === 'normal') {
-      return { label: '启用', color: 'success' as const, icon: <ActiveIcon fontSize="small" /> };
+      return { label: '已启用', color: 'success' as const, icon: <ActiveIcon fontSize="small" /> };
     }
     if (s === 'disable' || s === 'disabled' || s === 'pause' || s === 'paused' || s === 'stop' || s === 'stopped') {
       return { label: '禁用', color: 'default' as const, icon: null };
     }
     if (raw === 'ENABLE') {
-      return { label: '启用', color: 'success' as const, icon: <ActiveIcon fontSize="small" /> };
+      return { label: '已启用', color: 'success' as const, icon: <ActiveIcon fontSize="small" /> };
     }
     if (raw === 'DISABLE') {
       return { label: '禁用', color: 'default' as const, icon: null };
@@ -577,7 +587,82 @@ export default function Dashboard() {
     return { label: raw || '-', color: 'default' as const, icon: null };
   };
 
+  const getEsaAccessTypeLabel = (accessType?: string): string | null => {
+    const raw = String(accessType || '').trim();
+    if (!raw) return null;
+    const s = raw.toUpperCase();
+    if (s === 'CNAME' || s === 'NS') return s;
+    return raw.trim();
+  };
+
+  const getEsaCoverageLabel = (coverage?: string): string | null => {
+    const raw = String(coverage || '').trim();
+    if (!raw) return null;
+    const s = raw.toLowerCase();
+    if (s === 'global') return '全球';
+    if (s === 'domestic') return '国内';
+    if (s === 'overseas') return '海外';
+    if (s.includes('global')) return '全球';
+    if (s.includes('domestic') || s.includes('china') || s === 'cn') return '国内';
+    if (s.includes('oversea')) return '海外';
+    return raw;
+  };
+
+  const getEsaSubscriptionTypeLabel = (domain: Domain): string | null => {
+    const planName = String(domain.planName || '').trim();
+    const planSpecName = String(domain.planSpecName || '').trim();
+    const hint = `${planName} ${planSpecName}`.trim();
+    if (!hint) return null;
+
+    const h = hint.toLowerCase();
+    const isFree =
+      h.includes('free') ||
+      h.includes('trial') ||
+      h.includes('entrance') ||
+      h.includes('lite') ||
+      h.includes('nosla') ||
+      hint.includes('免费') ||
+      hint.includes('入门') ||
+      hint.includes('无SLA') ||
+      hint.includes('无sla');
+
+    if (isFree) return '免费版';
+    if (h.includes('basic') || hint.includes('基础')) return '基础版';
+    if (h.includes('standard') || hint.includes('标准')) return '标准版';
+    if (h.includes('pro') || hint.includes('专业')) return '专业版';
+    if (h.includes('premium') || hint.includes('高级')) return '高级版';
+    if (h.includes('enterprise') || hint.includes('企业')) return '企业版';
+
+    return planSpecName || planName || hint;
+  };
+
+  const getEsaTagsMeta = (tags?: Record<string, string>): { count: number; tooltip: string } | null => {
+    if (!tags || typeof tags !== 'object') return null;
+    const entries = Object.entries(tags)
+      .map(([k, v]) => [String(k || '').trim(), String(v ?? '').trim()] as const)
+      .filter(([k]) => !!k);
+    if (entries.length === 0) return null;
+    return {
+      count: entries.length,
+      tooltip: entries.map(([k, v]) => (v ? `${k}=${v}` : k)).join(' · '),
+    };
+  };
+
+  const esaMetaChipSx = { height: 22, fontSize: '0.72rem', borderRadius: 1 } as const;
+
   const showAccountColumn = effectiveCredentialId === 'all' && effectiveCredentials.length > 1;
+
+  const [esaSiteActionError, setEsaSiteActionError] = useState<string | null>(null);
+  const [esaMenuAnchor, setEsaMenuAnchor] = useState<HTMLElement | null>(null);
+  const [esaMenuSite, setEsaMenuSite] = useState<Domain | null>(null);
+  const [esaTagsOpen, setEsaTagsOpen] = useState(false);
+  const [esaTagsSite, setEsaTagsSite] = useState<Domain | null>(null);
+  const [esaTagRows, setEsaTagRows] = useState<Array<{ key: string; value: string }>>([]);
+  const [esaTagsError, setEsaTagsError] = useState<string | null>(null);
+  const [esaDeleteOpen, setEsaDeleteOpen] = useState(false);
+  const [esaDeleteSite, setEsaDeleteSite] = useState<Domain | null>(null);
+  const [esaDeleteConfirmInput, setEsaDeleteConfirmInput] = useState('');
+  const [esaDeleteError, setEsaDeleteError] = useState<string | null>(null);
 
   const getDomainCredentialName = (domain: Domain) => {
     if (typeof domain.credentialId === 'number') {
@@ -604,6 +689,9 @@ export default function Dashboard() {
   const zoneMenuProvider = zoneMenuDomain ? getDomainProvider(zoneMenuDomain) : undefined;
   const zoneMenuProviderLabel = zoneMenuProvider ? (PROVIDER_CONFIG[zoneMenuProvider]?.name || zoneMenuProvider) : 'DNS';
 
+  const canManageEsaSite = (domain: Domain): boolean =>
+    isEsaPanel && typeof domain.credentialId === 'number';
+
   const deleteMutation = useMutation({
     mutationFn: async (payload: { credentialId: number; zoneId: string }) => deleteZone(payload.credentialId, payload.zoneId),
     onSuccess: async () => {
@@ -618,6 +706,177 @@ export default function Dashboard() {
       setDeleteZoneError(err?.message ? String(err.message) : String(err));
     },
   });
+
+  const esaPauseMutation = useMutation({
+    mutationFn: async (payload: { site: Domain; paused: boolean }) => {
+      const { site, paused } = payload;
+      return updateEsaSitePause({
+        credentialId: site.credentialId as number,
+        siteId: site.id,
+        siteName: site.name,
+        paused,
+        region: site.region,
+      });
+    },
+    onSuccess: async () => {
+      setEsaSiteActionError(null);
+      closeEsaMenu();
+      refetch();
+    },
+    onError: (err: any) => {
+      setEsaSiteActionError(err?.message ? String(err.message) : String(err));
+    },
+  });
+
+  const esaDeleteMutation = useMutation({
+    mutationFn: async (payload: { site: Domain }) => {
+      const { site } = payload;
+      return deleteEsaSite({
+        credentialId: site.credentialId as number,
+        siteId: site.id,
+        region: site.region,
+      });
+    },
+    onSuccess: async () => {
+      setEsaDeleteError(null);
+      setEsaDeleteOpen(false);
+      setEsaDeleteSite(null);
+      setEsaDeleteConfirmInput('');
+      setExpandedDomainKey(null);
+      refetch();
+    },
+    onError: (err: any) => {
+      setEsaDeleteError(err?.message ? String(err.message) : String(err));
+    },
+  });
+
+  const esaUpdateTagsMutation = useMutation({
+    mutationFn: async (payload: { site: Domain; tags: Record<string, unknown> }) => {
+      const { site, tags } = payload;
+      return updateEsaSiteTags({
+        credentialId: site.credentialId as number,
+        siteId: site.id,
+        regionId: site.region,
+        region: site.region,
+        tags,
+      });
+    },
+    onSuccess: async () => {
+      setEsaTagsError(null);
+      setEsaTagsOpen(false);
+      setEsaTagsSite(null);
+      setEsaTagRows([]);
+      refetch();
+    },
+    onError: (err: any) => {
+      setEsaTagsError(err?.message ? String(err.message) : String(err));
+    },
+  });
+
+  const openEsaMenu = (e: ReactMouseEvent<HTMLElement>, domain: Domain) => {
+    e.stopPropagation();
+    setEsaMenuAnchor(e.currentTarget);
+    setEsaMenuSite(domain);
+  };
+
+  const closeEsaMenu = () => {
+    setEsaMenuAnchor(null);
+    setEsaMenuSite(null);
+  };
+
+  const openEsaDeleteDialog = () => {
+    if (!esaMenuSite) return;
+    if (!canManageEsaSite(esaMenuSite)) return;
+    setEsaDeleteError(null);
+    setEsaDeleteOpen(true);
+    setEsaDeleteSite(esaMenuSite);
+    setEsaDeleteConfirmInput('');
+    closeEsaMenu();
+  };
+
+  const closeEsaDeleteDialog = () => {
+    if (esaDeleteMutation.isPending) return;
+    setEsaDeleteOpen(false);
+    setEsaDeleteError(null);
+    setEsaDeleteConfirmInput('');
+    setEsaDeleteSite(null);
+  };
+
+  const confirmEsaDelete = () => {
+    if (!esaDeleteSite) return;
+    if (!canManageEsaSite(esaDeleteSite)) return;
+    if (esaDeleteConfirmInput !== esaDeleteSite.name) return;
+    esaDeleteMutation.mutate({ site: esaDeleteSite });
+  };
+
+  const openEsaTagsDialog = (e: ReactMouseEvent<HTMLElement>, site: Domain) => {
+    e.stopPropagation();
+    if (!canManageEsaSite(site)) return;
+    setEsaTagsError(null);
+    setEsaTagsSite(site);
+    const rows = Object.entries(site.tags || {}).map(([key, value]) => ({ key, value: String(value ?? '') }));
+    setEsaTagRows(rows.length > 0 ? rows : [{ key: '', value: '' }]);
+    setEsaTagsOpen(true);
+  };
+
+  const closeEsaTagsDialog = () => {
+    if (esaUpdateTagsMutation.isPending) return;
+    setEsaTagsOpen(false);
+    setEsaTagsSite(null);
+    setEsaTagRows([]);
+    setEsaTagsError(null);
+  };
+
+  const saveEsaTags = () => {
+    if (!esaTagsSite) return;
+    if (!canManageEsaSite(esaTagsSite)) return;
+    if (esaUpdateTagsMutation.isPending) return;
+
+    const trimmed = esaTagRows
+      .map((r) => ({ key: String(r.key || '').trim(), value: String(r.value ?? '') }))
+      .filter((r) => !!r.key);
+
+    const keys = new Set<string>();
+    for (const r of trimmed) {
+      if (r.key.length > 128) {
+        setEsaTagsError('标签 Key 最长 128 字符');
+        return;
+      }
+      const keyLower = r.key.toLowerCase();
+      if (keyLower.startsWith('acs:') || keyLower.startsWith('aliyun')) {
+        setEsaTagsError('标签 Key 不能以 acs: 或 aliyun 开头');
+        return;
+      }
+      if (keyLower.includes('http://') || keyLower.includes('https://')) {
+        setEsaTagsError('标签 Key 不能包含 http:// 或 https://');
+        return;
+      }
+      if (keys.has(r.key)) {
+        setEsaTagsError(`标签 Key 重复：${r.key}`);
+        return;
+      }
+      keys.add(r.key);
+      if (r.value.length > 128) {
+        setEsaTagsError('标签 Value 最长 128 字符');
+        return;
+      }
+      const valueLower = r.value.toLowerCase();
+      if (valueLower.startsWith('acs:') || valueLower.startsWith('aliyun')) {
+        setEsaTagsError('标签 Value 不能以 acs: 或 aliyun 开头');
+        return;
+      }
+      if (valueLower.includes('http://') || valueLower.includes('https://')) {
+        setEsaTagsError('标签 Value 不能包含 http:// 或 https://');
+        return;
+      }
+    }
+
+    const tags: Record<string, string> = {};
+    trimmed.forEach((r) => {
+      tags[r.key] = r.value;
+    });
+    esaUpdateTagsMutation.mutate({ site: esaTagsSite, tags });
+  };
 
   const openZoneMenu = (e: ReactMouseEvent<HTMLElement>, domain: Domain) => {
     e.stopPropagation();
@@ -664,15 +923,30 @@ export default function Dashboard() {
           : `/domain/${domain.id}`;
         
         const providerConfig = domain.provider ? PROVIDER_CONFIG[domain.provider] : null;
+        const esaAccessTypeLabel = isEsaPanel ? getEsaAccessTypeLabel(domain.accessType) : null;
+        const esaCoverageLabel = isEsaPanel ? getEsaCoverageLabel(domain.coverage) : null;
+        const esaSubscriptionLabel = isEsaPanel ? getEsaSubscriptionTypeLabel(domain) : null;
+        const esaTagsMeta = isEsaPanel ? getEsaTagsMeta(domain.tags) : null;
 
         return (
-          <Card key={rowKey} variant="outlined" sx={{ borderRadius: 2 }}>
+          <Card key={rowKey} variant="outlined" sx={{ borderRadius: 2, boxShadow: 'none' }}>
             <CardContent sx={{ p: 2, '&:last-child': { pb: 2 } }}>
               <Box sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', mb: 1.5 }}>
                 <Box>
-                  <Typography variant="subtitle1" fontWeight="600" sx={{ mb: 0.5 }}>
-                    {domain.name}
-                  </Typography>
+                  <Stack direction="row" spacing={0.5} alignItems="center" sx={{ mb: 0.5 }}>
+                    <Typography variant="subtitle1" fontWeight="600">
+                      {domain.name}
+                    </Typography>
+                    {!isEsaPanel && (
+                      <IconButton
+                        size="small"
+                        onClick={() => navigate(detailPath)}
+                        sx={{ color: 'primary.main', bgcolor: alpha(theme.palette.primary.main, 0.1) }}
+                      >
+                        <OpenInNewIcon fontSize="small" />
+                      </IconButton>
+                    )}
+                  </Stack>
                   <Stack direction="row" spacing={1} alignItems="center">
                      <Chip
                         icon={status.icon || undefined}
@@ -717,27 +991,49 @@ export default function Dashboard() {
                         />
                       )}
                   </Stack>
+
+                  {isEsaPanel && (
+                    <Stack direction="row" spacing={1} useFlexGap flexWrap="wrap" sx={{ mt: 1 }}>
+                      {esaAccessTypeLabel && (
+                        <Chip size="small" label={esaAccessTypeLabel} variant="outlined" sx={esaMetaChipSx} />
+                      )}
+                      {esaCoverageLabel && (
+                        <Chip size="small" label={esaCoverageLabel} variant="outlined" sx={esaMetaChipSx} />
+                      )}
+                      {esaSubscriptionLabel && (
+                        <Chip
+                          size="small"
+                          label={esaSubscriptionLabel}
+                          color={esaSubscriptionLabel === '免费版' ? 'warning' : 'default'}
+                          variant="outlined"
+                          sx={esaMetaChipSx}
+                        />
+                      )}
+                      <Chip
+                        size="small"
+                        label={esaTagsMeta ? `标签: ${esaTagsMeta.count}` : '标签: -'}
+                        variant="outlined"
+                        sx={esaMetaChipSx}
+                        onClick={(e) => openEsaTagsDialog(e, domain)}
+                      />
+                    </Stack>
+                  )}
                 </Box>
                 <Box>
-                  {!isEsaPanel && (
-                    <IconButton
-                      size="small"
-                      onClick={() => navigate(detailPath)}
-                      sx={{ color: 'primary.main', bgcolor: alpha(theme.palette.primary.main, 0.1), mr: 1 }}
-                    >
-                      <OpenInNewIcon fontSize="small" />
-                    </IconButton>
-                  )}
-                  {!isEsaPanel && (
-                    <IconButton
-                      size="small"
-                      onClick={(e) => openZoneMenu(e, domain)}
-                      disabled={!canOpenZoneMenu(domain)}
-                      sx={{ mr: 1 }}
-                    >
-                      <MoreVertIcon fontSize="small" />
-                    </IconButton>
-                  )}
+                  <IconButton
+                    size="small"
+                    onClick={(e) => {
+                      if (isEsaPanel) {
+                        openEsaMenu(e, domain);
+                      } else {
+                        openZoneMenu(e, domain);
+                      }
+                    }}
+                    disabled={isEsaPanel ? !canManageEsaSite(domain) : !canOpenZoneMenu(domain)}
+                    sx={{ mr: 1 }}
+                  >
+                    <MoreVertIcon fontSize="small" />
+                  </IconButton>
                   <IconButton
                     size="small"
                     onClick={() => setExpandedDomainKey(isExpanded ? null : rowKey)}
@@ -795,17 +1091,31 @@ export default function Dashboard() {
 
   // 桌面端表格视图渲染函数
   const renderDesktopView = () => (
-    <TableContainer sx={{ overflowX: 'visible' }}>
-      <Table sx={{ minWidth: 650, tableLayout: 'fixed' }}>
+    <TableContainer sx={{ overflowX: isEsaPanel ? 'auto' : 'visible' }}>
+      <Table sx={{ minWidth: isEsaPanel ? 1050 : 650, tableLayout: 'fixed' }}>
         <TableHead>
           <TableRow>
             <TableCell width={50} />
-            <TableCell>{isEsaPanel ? '站点' : '域名'}</TableCell>
-            {showAccountColumn && <TableCell>所属账户</TableCell>}
-            <TableCell>状态</TableCell>
-            <TableCell>最后更新</TableCell>
-            {!isEsaPanel && <TableCell>{expiryLabel}</TableCell>}
-            <TableCell width={52} align="right" />
+            <TableCell width={260}>{isEsaPanel ? '站点' : '域名'}</TableCell>
+            {showAccountColumn && <TableCell width={170}>所属账户</TableCell>}
+            {isEsaPanel ? (
+              <>
+                <TableCell width={110}>接入方式</TableCell>
+                <TableCell width={90}>区域</TableCell>
+                <TableCell width={120}>状态</TableCell>
+                <TableCell width={140}>订阅类型</TableCell>
+                <TableCell width={90}>标签</TableCell>
+                <TableCell width={120}>最后更新</TableCell>
+                <TableCell width={52} align="right" />
+              </>
+            ) : (
+              <>
+                <TableCell>状态</TableCell>
+                <TableCell>最后更新</TableCell>
+                <TableCell>{expiryLabel}</TableCell>
+                <TableCell width={52} align="right" />
+              </>
+            )}
           </TableRow>
         </TableHead>
         <TableBody>
@@ -818,6 +1128,10 @@ export default function Dashboard() {
               : `/domain/${domain.id}`;
 
             const providerConfig = domain.provider ? PROVIDER_CONFIG[domain.provider] : null;
+            const esaAccessTypeLabel = isEsaPanel ? getEsaAccessTypeLabel(domain.accessType) : null;
+            const esaCoverageLabel = isEsaPanel ? getEsaCoverageLabel(domain.coverage) : null;
+            const esaSubscriptionLabel = isEsaPanel ? getEsaSubscriptionTypeLabel(domain) : null;
+            const esaTagsMeta = isEsaPanel ? getEsaTagsMeta(domain.tags) : null;
 
             return (
               <Fragment key={rowKey}>
@@ -839,22 +1153,28 @@ export default function Dashboard() {
                     </IconButton>
                   </TableCell>
                   <TableCell>
-                    <Stack direction="row" alignItems="center" spacing={1}>
-                      <Typography variant="body1" fontWeight="600" color="text.primary">
+                    {isEsaPanel ? (
+                      <Typography variant="body1" fontWeight="600" noWrap sx={{ color: 'primary.main' }}>
                         {domain.name}
                       </Typography>
-                      {!isEsaPanel && (
-                        <IconButton
-                          size="small"
-                          onClick={(e) => {
-                            e.stopPropagation();
-                            navigate(detailPath);
-                          }}
-                        >
-                          <OpenInNewIcon fontSize="inherit" />
-                        </IconButton>
-                      )}
-                    </Stack>
+                    ) : (
+                      <Stack direction="row" alignItems="center" spacing={1}>
+                        <Typography variant="body1" fontWeight="600" color="text.primary">
+                          {domain.name}
+                        </Typography>
+                        {!isEsaPanel && (
+                          <IconButton
+                            size="small"
+                            onClick={(e) => {
+                              e.stopPropagation();
+                              navigate(detailPath);
+                            }}
+                          >
+                            <OpenInNewIcon fontSize="inherit" />
+                          </IconButton>
+                        )}
+                      </Stack>
+                    )}
                   </TableCell>
 
                   {showAccountColumn && (
@@ -883,47 +1203,121 @@ export default function Dashboard() {
                     </TableCell>
                   )}
 
-                  <TableCell>
-                    <Chip
-                      icon={status.icon || undefined}
-                      label={status.label}
-                      color={status.color === 'default' ? 'default' : status.color}
-                      size="small"
-                      sx={{
-                        bgcolor: (theme) => status.color !== 'default'
-                          ? alpha(theme.palette[status.color as 'success' | 'warning' | 'error'].main, 0.1)
-                          : undefined,
-                        color: (theme) => status.color !== 'default'
-                          ? theme.palette[status.color as 'success' | 'warning' | 'error'].dark
-                          : undefined,
-                        fontWeight: 600,
-                        border: 'none',
-                        '& .MuiChip-icon': { color: 'inherit' }
-                      }}
-                    />
-                  </TableCell>
-                  <TableCell sx={{ color: 'text.secondary' }}>
-                    {domain.updatedAt ? formatRelativeTime(domain.updatedAt) : '-'}
-                  </TableCell>
-                  {!isEsaPanel && (
-                    <TableCell sx={{ color: 'text.secondary' }}>
-                      {formatExpiryValue(domain.name)}
-                    </TableCell>
+                  {isEsaPanel ? (
+                    <>
+                      <TableCell sx={{ color: 'text.secondary' }}>
+                        {esaAccessTypeLabel || '-'}
+                      </TableCell>
+                      <TableCell sx={{ color: 'text.secondary' }}>
+                        {esaCoverageLabel || '-'}
+                      </TableCell>
+                      <TableCell>
+                        <Chip
+                          icon={status.icon || undefined}
+                          label={status.label}
+                          color={status.color === 'default' ? 'default' : status.color}
+                          size="small"
+                          sx={{
+                            bgcolor: (theme) => status.color !== 'default'
+                              ? alpha(theme.palette[status.color as 'success' | 'warning' | 'error'].main, 0.1)
+                              : undefined,
+                            color: (theme) => status.color !== 'default'
+                              ? theme.palette[status.color as 'success' | 'warning' | 'error'].dark
+                              : undefined,
+                            fontWeight: 600,
+                            border: 'none',
+                            '& .MuiChip-icon': { color: 'inherit' }
+                          }}
+                        />
+                      </TableCell>
+                      <TableCell>
+                        {esaSubscriptionLabel ? (
+                          <Chip
+                            size="small"
+                            label={esaSubscriptionLabel}
+                            color={esaSubscriptionLabel === '免费版' ? 'warning' : 'default'}
+                            variant="outlined"
+                            sx={esaMetaChipSx}
+                            title={[domain.planName, domain.planSpecName].filter(Boolean).join(' · ')}
+                          />
+                        ) : (
+                          <Typography variant="body2" color="text.secondary">-</Typography>
+                        )}
+                      </TableCell>
+                      <TableCell>
+                        <IconButton
+                          size="small"
+                          onClick={(e) => openEsaTagsDialog(e, domain)}
+                          title={esaTagsMeta?.tooltip || '编辑标签'}
+                          sx={{ color: 'text.secondary' }}
+                        >
+                          <Box component="span" sx={{ display: 'inline-flex', alignItems: 'center', gap: 0.5 }}>
+                            <TagIcon sx={{ fontSize: 18 }} />
+                            {esaTagsMeta && <Typography variant="caption">{esaTagsMeta.count}</Typography>}
+                          </Box>
+                        </IconButton>
+                      </TableCell>
+                      <TableCell sx={{ color: 'text.secondary' }}>
+                        {domain.updatedAt ? formatRelativeTime(domain.updatedAt) : '-'}
+                      </TableCell>
+                      <TableCell align="right" onClick={(e) => e.stopPropagation()}>
+                        <IconButton
+                          size="small"
+                          onClick={(e) => openEsaMenu(e, domain)}
+                          disabled={!canManageEsaSite(domain)}
+                        >
+                          <MoreVertIcon fontSize="inherit" />
+                        </IconButton>
+                      </TableCell>
+                    </>
+                  ) : (
+                    <>
+                      <TableCell>
+                        <Chip
+                          icon={status.icon || undefined}
+                          label={status.label}
+                          color={status.color === 'default' ? 'default' : status.color}
+                          size="small"
+                          sx={{
+                            bgcolor: (theme) => status.color !== 'default'
+                              ? alpha(theme.palette[status.color as 'success' | 'warning' | 'error'].main, 0.1)
+                              : undefined,
+                            color: (theme) => status.color !== 'default'
+                              ? theme.palette[status.color as 'success' | 'warning' | 'error'].dark
+                              : undefined,
+                            fontWeight: 600,
+                            border: 'none',
+                            '& .MuiChip-icon': { color: 'inherit' }
+                          }}
+                        />
+                      </TableCell>
+                      <TableCell sx={{ color: 'text.secondary' }}>
+                        {domain.updatedAt ? formatRelativeTime(domain.updatedAt) : '-'}
+                      </TableCell>
+                      <TableCell sx={{ color: 'text.secondary' }}>
+                        {formatExpiryValue(domain.name)}
+                      </TableCell>
+                      <TableCell align="right" onClick={(e) => e.stopPropagation()}>
+                        <IconButton
+                          size="small"
+                          onClick={(e) => openZoneMenu(e, domain)}
+                          disabled={!canOpenZoneMenu(domain)}
+                        >
+                          <MoreVertIcon fontSize="inherit" />
+                        </IconButton>
+                      </TableCell>
+                    </>
                   )}
-                  <TableCell align="right" onClick={(e) => e.stopPropagation()}>
-                    {!isEsaPanel && (
-                      <IconButton
-                        size="small"
-                        onClick={(e) => openZoneMenu(e, domain)}
-                        disabled={!canOpenZoneMenu(domain)}
-                      >
-                        <MoreVertIcon fontSize="inherit" />
-                      </IconButton>
-                    )}
-                  </TableCell>
                 </TableRow>
                 <TableRow>
-                  <TableCell style={{ padding: 0 }} colSpan={(showAccountColumn ? 7 : 6) - (isEsaPanel ? 1 : 0)}>
+                  <TableCell
+                    style={{ padding: 0 }}
+                    colSpan={
+                      isEsaPanel
+                        ? (showAccountColumn ? 10 : 9)
+                        : (showAccountColumn ? 7 : 6)
+                    }
+                  >
                     <Collapse in={isExpanded} timeout="auto" unmountOnExit>
                       {isEsaPanel ? (
                         <EsaRecordManagement
@@ -1042,6 +1436,12 @@ export default function Dashboard() {
             </Stack>
           </Stack>
 
+          {isEsaPanel && esaSiteActionError && (
+            <Alert severity="error" sx={{ mb: 2, borderRadius: 2 }} onClose={() => setEsaSiteActionError(null)}>
+              {esaSiteActionError}
+            </Alert>
+          )}
+
           {isLoading ? (
             <Box sx={{ display: 'flex', justifyContent: 'center', alignItems: 'center', py: 8 }}>
               <CircularProgress />
@@ -1079,12 +1479,161 @@ export default function Dashboard() {
                 onRowsPerPageChange={() => {}}
                 rowsPerPageOptions={[rowsPerPage]}
                 labelRowsPerPage="每页显示"
-                sx={{ mt: 1 }}
+                sx={{
+                  mt: 1,
+                }}
               />
             </>
           )}
         </CardContent>
       </Card>
+
+      <Menu
+        anchorEl={esaMenuAnchor}
+        open={!!esaMenuAnchor}
+        onClose={closeEsaMenu}
+        anchorOrigin={{ vertical: 'bottom', horizontal: 'right' }}
+        transformOrigin={{ vertical: 'top', horizontal: 'right' }}
+      >
+        <MenuItem
+          onClick={() => {
+            const site = esaMenuSite;
+            if (!site) return;
+            const isPaused = getStatusConfig(site.status).label === '禁用';
+            esaPauseMutation.mutate({ site, paused: !isPaused });
+            closeEsaMenu();
+          }}
+          disabled={!esaMenuSite || !canManageEsaSite(esaMenuSite) || esaPauseMutation.isPending}
+        >
+          {(() => {
+            const isPaused = esaMenuSite ? getStatusConfig(esaMenuSite.status).label === '禁用' : false;
+            return isPaused ? <ResumeIcon fontSize="small" style={{ marginRight: 8 }} /> : <PauseIcon fontSize="small" style={{ marginRight: 8 }} />;
+          })()}
+          {esaMenuSite && getStatusConfig(esaMenuSite.status).label === '禁用' ? '启用' : '停用'}
+        </MenuItem>
+        <MenuItem onClick={openEsaDeleteDialog} disabled={!esaMenuSite || !canManageEsaSite(esaMenuSite) || esaDeleteMutation.isPending}>
+          <DeleteIcon fontSize="small" style={{ marginRight: 8 }} />
+          删除站点
+        </MenuItem>
+      </Menu>
+
+      <Dialog open={esaTagsOpen} onClose={closeEsaTagsDialog} maxWidth="sm" fullWidth>
+        <DialogTitle>编辑站点标签</DialogTitle>
+        <DialogContent>
+          <Stack spacing={2} sx={{ mt: 1 }}>
+            <Typography variant="body2" color="text.secondary">
+              站点：<strong>{esaTagsSite?.name || '-'}</strong>
+            </Typography>
+            <Stack spacing={1}>
+              {esaTagRows.map((row, idx) => (
+                <Stack
+                  key={idx}
+                  direction={{ xs: 'column', sm: 'row' }}
+                  spacing={1}
+                  alignItems={{ xs: 'stretch', sm: 'center' }}
+                >
+                  <TextField
+                    label="Key"
+                    size="small"
+                    value={row.key}
+                    onChange={(e) => {
+                      const v = e.target.value;
+                      setEsaTagRows((rows) => rows.map((r, i) => (i === idx ? { ...r, key: v } : r)));
+                    }}
+                    fullWidth
+                    autoComplete="off"
+                    disabled={esaUpdateTagsMutation.isPending}
+                  />
+                  <TextField
+                    label="Value"
+                    size="small"
+                    value={row.value}
+                    onChange={(e) => {
+                      const v = e.target.value;
+                      setEsaTagRows((rows) => rows.map((r, i) => (i === idx ? { ...r, value: v } : r)));
+                    }}
+                    fullWidth
+                    autoComplete="off"
+                    disabled={esaUpdateTagsMutation.isPending}
+                  />
+                  <IconButton
+                    size="small"
+                    onClick={() => {
+                      setEsaTagRows((rows) => {
+                        const next = rows.filter((_r, i) => i !== idx);
+                        return next.length > 0 ? next : [{ key: '', value: '' }];
+                      });
+                    }}
+                    disabled={esaUpdateTagsMutation.isPending}
+                    sx={{ alignSelf: { xs: 'flex-end', sm: 'center' } }}
+                    title="删除标签"
+                  >
+                    <DeleteIcon fontSize="small" />
+                  </IconButton>
+                </Stack>
+              ))}
+              <Button
+                variant="outlined"
+                size="small"
+                startIcon={<AddIcon />}
+                onClick={() => setEsaTagRows((rows) => [...rows, { key: '', value: '' }])}
+                disabled={esaUpdateTagsMutation.isPending}
+                sx={{ alignSelf: 'flex-start' }}
+              >
+                添加标签
+              </Button>
+            </Stack>
+            {esaTagsError && <Alert severity="error">{esaTagsError}</Alert>}
+            <Alert severity="info">标签将通过阿里云 ESA 标签 API（TagResources/UntagResources）更新。</Alert>
+          </Stack>
+        </DialogContent>
+        <DialogActions>
+          <Button onClick={closeEsaTagsDialog} disabled={esaUpdateTagsMutation.isPending} color="inherit">
+            取消
+          </Button>
+          <Button onClick={saveEsaTags} disabled={!esaTagsSite || esaUpdateTagsMutation.isPending} variant="contained">
+            {esaUpdateTagsMutation.isPending ? '保存中...' : '保存'}
+          </Button>
+        </DialogActions>
+      </Dialog>
+
+      <Dialog open={esaDeleteOpen} onClose={closeEsaDeleteDialog} maxWidth="xs" fullWidth>
+        <DialogTitle>确认删除站点</DialogTitle>
+        <DialogContent>
+          <Stack spacing={2} sx={{ mt: 1 }}>
+            <Typography variant="body2">
+              确认删除站点 <strong>{esaDeleteSite?.name || '-'}</strong> 吗？
+            </Typography>
+            <Alert severity="warning">
+              该操作会删除整个站点，且不可恢复。
+            </Alert>
+            <TextField
+              label="请输入站点名以确认删除"
+              placeholder={esaDeleteSite?.name || ''}
+              value={esaDeleteConfirmInput}
+              onChange={(e) => setEsaDeleteConfirmInput(e.target.value)}
+              fullWidth
+              size="small"
+              disabled={esaDeleteMutation.isPending}
+              autoComplete="off"
+            />
+            {esaDeleteError && <Alert severity="error">{esaDeleteError}</Alert>}
+          </Stack>
+        </DialogContent>
+        <DialogActions>
+          <Button onClick={closeEsaDeleteDialog} disabled={esaDeleteMutation.isPending} color="inherit">
+            取消
+          </Button>
+          <Button
+            onClick={confirmEsaDelete}
+            disabled={esaDeleteMutation.isPending || esaDeleteConfirmInput !== esaDeleteSite?.name}
+            color="error"
+            variant="contained"
+          >
+            {esaDeleteMutation.isPending ? '删除中...' : '删除'}
+          </Button>
+        </DialogActions>
+      </Dialog>
 
       <Menu
         anchorEl={zoneMenuAnchor}

@@ -26,6 +26,7 @@ import {
   Button,
 } from '@mui/material';
 import {
+  Dns as DnsIcon,
   Edit as EditIcon,
   Delete as DeleteIcon,
   Cloud as CloudIcon,
@@ -262,7 +263,10 @@ export default function DNSRecordTable({
           return (
             <Card key={record.id} variant="outlined" sx={{ borderRadius: 2 }}>
               <CardContent sx={{ display: 'flex', flexDirection: 'column', gap: 2 }}>
-                <Typography variant="subtitle2" color="primary.main" fontWeight="bold">编辑记录</Typography>
+                <Stack direction="row" alignItems="center" spacing={1} sx={{ pb: 1.5, borderBottom: 1, borderColor: 'divider' }}>
+                  <DnsIcon color="primary" sx={{ fontSize: '1em' }} />
+                  <Typography variant="subtitle2" color="primary.main" fontWeight="bold">编辑记录</Typography>
+                </Stack>
                 <Grid container spacing={2}>
                   <Grid item xs={4}>
                      <TextField

@@ -17,12 +17,16 @@ import {
   listEsaRecords,
   listEsaRatePlanInstances,
   listEsaSites,
+  listEsaSiteTags,
+  updateEsaSitePause,
   updateEsaRecord,
+  updateEsaSiteTags,
   verifyEsaSite,
 } from '../services/aliyunEsa';
 
 const router = Router();
 const prisma = new PrismaClient();
+const ESA_FALLBACK_REGIONS = ['cn-hangzhou', 'ap-southeast-1'] as const;
 
 router.use(authenticateToken);
 
@@ -39,6 +43,83 @@ function normalizeRegion(value: unknown): string | undefined {
   // cn-hangzhou / ap-southeast-1 ...
   if (!/^[a-z]{2}-[a-z0-9-]+$/i.test(r)) return undefined;
   return r;
+}
+
+function isEsaRetryableRegionError(error: any): boolean {
+  const code = String(error?.code || '').trim();
+  return code === 'InvalidParameter.ArgValue' || code === 'InvalidPaused' || code === 'SiteNotFound';
+}
+
+function getEsaRegionCandidates(preferredRegion: string | undefined): Array<string | undefined> {
+  const seen = new Set<string>();
+  return [preferredRegion, ...ESA_FALLBACK_REGIONS, undefined].filter((r) => {
+    const key = String(r || '__default__');
+    if (seen.has(key)) return false;
+    seen.add(key);
+    return true;
+  });
+}
+
+async function withEsaRegionFallback<T>(
+  preferredRegion: string | undefined,
+  fn: (region: string | undefined) => Promise<T>
+): Promise<T> {
+  const candidates = getEsaRegionCandidates(preferredRegion);
+
+  let lastError: any;
+  for (let i = 0; i < candidates.length; i += 1) {
+    const region = candidates[i];
+    try {
+      return await fn(region);
+    } catch (error: any) {
+      lastError = error;
+      if (i === candidates.length - 1 || !isEsaRetryableRegionError(error)) {
+        throw error;
+      }
+    }
+  }
+
+  throw lastError;
+}
+
+async function resolveEsaSiteByName(
+  auth: { accessKeyId: string; accessKeySecret: string },
+  preferredRegion: string | undefined,
+  siteName: string
+): Promise<{ siteId: string; region?: string } | null> {
+  const target = normalizeDnsName(siteName);
+  if (!target) return null;
+
+  for (const region of getEsaRegionCandidates(preferredRegion)) {
+    try {
+      const pageSize = 100;
+      let pageNumber = 1;
+
+      while (pageNumber <= 50) {
+        const result = await listEsaSites(auth, {
+          region,
+          pageNumber,
+          pageSize,
+          keyword: siteName,
+        });
+
+        const sites = Array.isArray(result?.sites) ? result.sites : [];
+        const exact = sites.find((s) => normalizeDnsName(s.siteName) === target);
+        if (exact?.siteId) {
+          return { siteId: String(exact.siteId).trim(), region };
+        }
+
+        const total = typeof result?.total === 'number' ? result.total : 0;
+        if (sites.length < pageSize) break;
+        if (total > 0 && pageNumber * pageSize >= total) break;
+        pageNumber += 1;
+      }
+    } catch {
+      // ignore and continue next region
+    }
+  }
+
+  return null;
 }
 
 async function getAliyunAuth(userId: number, credentialId?: number) {
@@ -289,12 +370,104 @@ router.delete('/sites/:siteId', async (req: AuthRequest, res) => {
     if (!siteId) return errorResponse(res, '缺少参数: siteId', 400);
 
     const { auth } = await getAliyunAuth(userId, credentialId);
-    const result = await deleteEsaSite(auth, { region, siteId });
+    const result = await withEsaRegionFallback(region, (resolvedRegion) =>
+      deleteEsaSite(auth, { region: resolvedRegion, siteId })
+    );
 
     return successResponse(res, result, '删除 ESA 站点成功');
   } catch (error: any) {
     const status = typeof error?.httpStatus === 'number' ? error.httpStatus : 400;
     return errorResponse(res, error?.message || '删除 ESA 站点失败', status, error);
+  }
+});
+
+router.post('/sites/:siteId/pause', async (req: AuthRequest, res) => {
+  try {
+    const userId = req.user!.id;
+    const siteId = String(req.params.siteId || '').trim();
+    const body = (req.body || {}) as any;
+    const credentialId = parseCredentialId(body.credentialId ?? req.query.credentialId);
+    const region = normalizeRegion(body.region ?? req.query.region);
+    const siteName = String(body.siteName ?? body.SiteName ?? '').trim();
+    const pausedInput = body.paused ?? body.Paused ?? req.query.paused ?? req.query.Paused;
+    const paused =
+      typeof pausedInput === 'boolean'
+        ? pausedInput
+        : String(pausedInput || '').trim().toLowerCase() === 'true';
+
+    if (!siteId) return errorResponse(res, '缺少参数: siteId', 400);
+
+    const { auth } = await getAliyunAuth(userId, credentialId);
+    let result;
+    try {
+      result = await withEsaRegionFallback(region, (resolvedRegion) =>
+        updateEsaSitePause(auth, { region: resolvedRegion, siteId, paused })
+      );
+    } catch (error: any) {
+      const code = String(error?.code || '').trim();
+      const canRecoverByName =
+        !!siteName &&
+        (code === 'InvalidParameter.ArgValue' || code === 'InvalidPaused' || code === 'SiteNotFound');
+
+      if (!canRecoverByName) throw error;
+
+      const resolved = await resolveEsaSiteByName(auth, region, siteName);
+      if (!resolved?.siteId) throw error;
+
+      result = await withEsaRegionFallback(resolved.region, (resolvedRegion) =>
+        updateEsaSitePause(auth, { region: resolvedRegion, siteId: resolved.siteId, paused })
+      );
+    }
+
+    return successResponse(res, result, paused ? '停用（暂停）ESA 站点成功' : '启用（恢复）ESA 站点成功');
+  } catch (error: any) {
+    const status = typeof error?.httpStatus === 'number' ? error.httpStatus : 400;
+    return errorResponse(res, error?.message || '更新 ESA 站点状态失败', status, error);
+  }
+});
+
+router.get('/sites/:siteId/tags', async (req: AuthRequest, res) => {
+  try {
+    const userId = req.user!.id;
+    const siteId = String(req.params.siteId || '').trim();
+    const credentialId = parseCredentialId(req.query.credentialId);
+    const regionId = normalizeRegion(req.query.regionId ?? req.query.region);
+
+    if (!siteId) return errorResponse(res, '缺少参数: siteId', 400);
+
+    const { auth } = await getAliyunAuth(userId, credentialId);
+    const result = await withEsaRegionFallback(regionId, (resolvedRegion) =>
+      listEsaSiteTags(auth, { regionId: resolvedRegion, siteId })
+    );
+
+    return successResponse(res, result, '获取 ESA 站点标签成功');
+  } catch (error: any) {
+    const status = typeof error?.httpStatus === 'number' ? error.httpStatus : 400;
+    return errorResponse(res, error?.message || '获取 ESA 站点标签失败', status, error);
+  }
+});
+
+router.put('/sites/:siteId/tags', async (req: AuthRequest, res) => {
+  try {
+    const userId = req.user!.id;
+    const siteId = String(req.params.siteId || '').trim();
+    const body = (req.body || {}) as any;
+    const credentialId = parseCredentialId(body.credentialId ?? req.query.credentialId);
+    const regionId = normalizeRegion(body.regionId ?? body.region ?? req.query.regionId ?? req.query.region);
+    const tags = body.tags;
+
+    if (!siteId) return errorResponse(res, '缺少参数: siteId', 400);
+    if (!tags || typeof tags !== 'object') return errorResponse(res, '缺少参数: tags(object)', 400);
+
+    const { auth } = await getAliyunAuth(userId, credentialId);
+    const result = await withEsaRegionFallback(regionId, (resolvedRegion) =>
+      updateEsaSiteTags(auth, { regionId: resolvedRegion, siteId, tags })
+    );
+
+    return successResponse(res, result, '更新 ESA 站点标签成功');
+  } catch (error: any) {
+    const status = typeof error?.httpStatus === 'number' ? error.httpStatus : 400;
+    return errorResponse(res, error?.message || '更新 ESA 站点标签失败', status, error);
   }
 });
 

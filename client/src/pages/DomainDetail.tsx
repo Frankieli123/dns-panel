@@ -14,8 +14,6 @@ import {
   DialogContent,
   DialogActions,
   Stack,
-  TextField,
-  InputAdornment,
   useTheme,
   useMediaQuery,
   IconButton,
@@ -24,10 +22,10 @@ import {
   Add as AddIcon,
   Dns as DnsIcon,
   Language as LanguageIcon,
-  Search as SearchIcon,
+  Refresh as RefreshIcon,
   ArrowBack as ArrowBackIcon,
 } from '@mui/icons-material';
-import { getDNSRecords, createDNSRecord, updateDNSRecord, deleteDNSRecord, getDNSLines, getDNSMinTTL, setDNSRecordStatus } from '@/services/dns';
+import { getDNSRecords, createDNSRecord, updateDNSRecord, deleteDNSRecord, getDNSLines, getDNSMinTTL, setDNSRecordStatus, refreshDNSRecords } from '@/services/dns';
 import { getDomainById } from '@/services/domains';
 import DNSRecordTable from '@/components/DNSRecordTable/DNSRecordTable';
 import QuickAddForm from '@/components/QuickAddForm/QuickAddForm';
@@ -46,7 +44,8 @@ export default function DomainDetail() {
   const queryClient = useQueryClient();
   const { setLabel } = useBreadcrumb();
   const [showQuickAdd, setShowQuickAdd] = useState(false);
-  const [searchKeyword, setSearchKeyword] = useState('');
+  const [isRefreshing, setIsRefreshing] = useState(false);
+  const [refreshError, setRefreshError] = useState<string | null>(null);
 
   const { selectedCredentialId, selectedProvider, credentials, getProviderCapabilities } = useProvider();
   const credParam = new URLSearchParams(location.search).get('credentialId');
@@ -81,20 +80,20 @@ export default function DomainDetail() {
   }, [domainData, zoneId, setLabel]);
 
   // 获取DNS记录
-  const { data, isLoading, error } = useQuery({
+  const { data, isLoading, isFetching: isRecordsFetching, error, refetch: refetchRecords } = useQuery({
     queryKey: ['dns-records', zoneId, credentialId],
     queryFn: () => getDNSRecords(zoneId!, credentialId),
     enabled: queriesEnabled,
   });
 
   // 获取线路列表
-  const { data: linesData } = useQuery({
+  const { data: linesData, refetch: refetchLines } = useQuery({
     queryKey: ['dns-lines', zoneId, credentialId],
     queryFn: () => getDNSLines(zoneId!, credentialId),
     enabled: queriesEnabled && supportsLine,
   });
 
-  const { data: minTtlData } = useQuery({
+  const { data: minTtlData, refetch: refetchMinTtl } = useQuery({
     queryKey: ['dns-min-ttl', zoneId, credentialId],
     queryFn: () => getDNSMinTTL(zoneId!, credentialId),
     enabled: queriesEnabled,
@@ -130,6 +129,27 @@ export default function DomainDetail() {
     },
   });
 
+  const handleRefresh = async () => {
+    if (!zoneId || isRefreshing) return;
+    setIsRefreshing(true);
+    setRefreshError(null);
+    try {
+      try {
+        await refreshDNSRecords(zoneId, credentialId);
+      } catch (err) {
+        setRefreshError(String((err as any)?.message || err));
+      }
+
+      await Promise.all([
+        refetchRecords(),
+        supportsLine ? refetchLines() : Promise.resolve(),
+        refetchMinTtl(),
+      ]);
+    } finally {
+      setIsRefreshing(false);
+    }
+  };
+
   if (missingCredentialContext) {
     return (
       <Alert severity="warning" sx={{ mt: 2 }}>
@@ -157,18 +177,8 @@ export default function DomainDetail() {
   const records = data?.data?.records || [];
   const lines = linesData?.data?.lines || [];
   const minTTL = minTtlData?.data?.minTTL;
+  const quickAddFormId = `dns-quick-add-form-${zoneId}-${credentialId ?? 'default'}`;
   const domainName = domainData?.data?.domain?.name || 'DNS 记录';
-
-  const filteredRecords = searchKeyword.trim()
-    ? records.filter((r: any) => {
-        const keyword = searchKeyword.toLowerCase();
-        return (
-          r.name?.toLowerCase().includes(keyword) ||
-          r.content?.toLowerCase().includes(keyword) ||
-          r.type?.toLowerCase().includes(keyword)
-        );
-      })
-    : records;
 
   return (
     <Box>
@@ -190,50 +200,46 @@ export default function DomainDetail() {
 
       {/* 顶部操作栏 */}
       <Box sx={{ mb: 2 }}>
-        <Stack 
-          direction={{ xs: 'column', sm: 'row' }} 
-          justifyContent="space-between" 
-          alignItems={{ xs: 'stretch', sm: 'center' }}
-          spacing={2}
-        >
-          <TextField
-            size="small"
-            placeholder="搜索记录..."
-            value={searchKeyword}
-            onChange={(e) => setSearchKeyword(e.target.value)}
-            sx={{ width: { xs: '100%', sm: 240 } }}
-            InputProps={{
-              startAdornment: (
-                <InputAdornment position="start">
-                  <SearchIcon color="action" fontSize="small" />
-                </InputAdornment>
-              ),
-            }}
-          />
-          <Stack direction="row" spacing={2} sx={{ justifyContent: { xs: 'flex-end', sm: 'flex-start' } }}>
+        <Stack direction="row" spacing={1} justifyContent="flex-end" sx={{ width: '100%' }}>
             {supportsCustomHostnames && (
               <Button
                 variant="outlined"
+                size="small"
                 startIcon={<LanguageIcon />}
                 onClick={() => {
                   navigate(credentialId ? `/hostnames/${zoneId}?credentialId=${credentialId}` : `/hostnames/${zoneId}`);
                 }}
-                sx={{ px: 3, flex: { xs: 1, sm: 'none' } }}
+                sx={{ flex: { xs: 1, sm: 'none' } }}
               >
                 主机名
               </Button>
             )}
             <Button
               variant="contained"
+              size="small"
               startIcon={<AddIcon />}
               onClick={() => setShowQuickAdd(true)}
-              sx={{ px: 3, flex: { xs: 1, sm: 'none' } }}
+              sx={{ flex: { xs: 1, sm: 'none' } }}
             >
               添加记录
             </Button>
+            <Button
+              variant="outlined"
+              size="small"
+              startIcon={<RefreshIcon />}
+              onClick={handleRefresh}
+              disabled={isLoading || isRecordsFetching || isRefreshing}
+              sx={{ flex: { xs: 1, sm: 'none' } }}
+            >
+              {isRefreshing ? '刷新中...' : '刷新'}
+            </Button>
           </Stack>
-        </Stack>
       </Box>
+      {refreshError && (
+        <Alert severity="warning" sx={{ mb: 2 }} onClose={() => setRefreshError(null)}>
+          {refreshError}
+        </Alert>
+      )}
       <Card sx={{ 
         border: 'none', 
         boxShadow: isMobile ? 'none' : '0 4px 20px rgba(0,0,0,0.05)',
@@ -241,7 +247,7 @@ export default function DomainDetail() {
       }}>
         <CardContent sx={{ p: isMobile ? 0 : 0 }}>
           <DNSRecordTable
-            records={filteredRecords}
+            records={records}
             lines={lines}
             minTTL={minTTL}
             stickyBodyBgColor="#ffffff"
@@ -275,8 +281,8 @@ export default function DomainDetail() {
         </DialogTitle>
         <DialogContent sx={{ mt: 2 }}>
           <QuickAddForm
+            formId={quickAddFormId}
             onSubmit={(params) => createMutation.mutate(params)}
-            loading={createMutation.isPending}
             lines={lines}
             minTTL={minTTL}
             providerType={credentialProvider}
@@ -284,6 +290,14 @@ export default function DomainDetail() {
         </DialogContent>
         <DialogActions sx={{ px: 3, pb: 3 }}>
           <Button onClick={() => setShowQuickAdd(false)} color="inherit">取消</Button>
+          <Button
+            type="submit"
+            form={quickAddFormId}
+            variant="contained"
+            disabled={createMutation.isPending}
+          >
+            {createMutation.isPending ? '添加中...' : '添加'}
+          </Button>
         </DialogActions>
       </Dialog>
     </Box>

@@ -500,7 +500,6 @@ export default function DnsCredentialManagement() {
                             setCredentialToDelete(cred);
                             setDeleteDialogOpen(true);
                           }}
-                          disabled={credentials.length <= 1}
                         >
                           <DeleteIcon fontSize="small" />
                         </IconButton>

@@ -24,8 +24,6 @@ import {
   TextField,
   Tooltip,
   Typography,
-  useMediaQuery,
-  useTheme,
 } from '@mui/material';
 import { ContentCopy as CopyIcon } from '@mui/icons-material';
 import type { DnsCredential } from '@/types/dns';
@@ -102,9 +100,6 @@ export default function AddZoneDialog({
   initialCredentialId?: number;
   onClose: (refresh: boolean) => void;
 }) {
-  const theme = useTheme();
-  const isMobile = useMediaQuery(theme.breakpoints.down('sm'));
-
   const [credentialId, setCredentialId] = useState<number>(() => initialCredentialId ?? credentials[0]?.id ?? 0);
   const [domainsText, setDomainsText] = useState('');
   const [submitError, setSubmitError] = useState<string | null>(null);
@@ -182,7 +177,13 @@ export default function AddZoneDialog({
   };
 
   return (
-    <Dialog open={open} onClose={handleDone} maxWidth="md" fullWidth fullScreen={isMobile}>
+    <Dialog
+      open={open}
+      onClose={handleDone}
+      maxWidth="md"
+      fullWidth
+      PaperProps={{ sx: { borderRadius: 2 } }}
+    >
       <DialogTitle>添加域名到 {providerLabel}</DialogTitle>
       <DialogContent>
         <Stack spacing={2.5} sx={{ mt: 1 }}>

@@ -161,7 +161,7 @@ export default function Login() {
             专业的 DNS 管理平台
           </Typography>
           <Typography variant="h6" sx={{ opacity: 0.7, fontWeight: 'normal', mt: 2, lineHeight: 1.6 }}>
-            简单、高效、安全地管理您的 Cloudflare 域名解析记录和自定义主机名。
+            简单、高效、安全地管理您的 DNS 域名解析记录和自定义主机名。
           </Typography>
         </Box>
       </Box>

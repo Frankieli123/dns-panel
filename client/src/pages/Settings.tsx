@@ -486,15 +486,16 @@ export default function Settings() {
                     </Alert>
                   )}
 
-                  <FormControl>
-                    <FormLabel>列表显示</FormLabel>
+                  <FormControl sx={{ mt: -0.5 }}>
                     <RadioGroup
                       row
+                      aria-label="列表显示"
+                      sx={{ gap: 2 }}
                       value={expiryDisplayMode}
                       onChange={(e) => setExpiryDisplayMode((e.target as HTMLInputElement).value as any)}
                     >
-                      <FormControlLabel value="date" control={<Radio />} label="到期日期" />
-                      <FormControlLabel value="days" control={<Radio />} label="剩余天数" />
+                      <FormControlLabel sx={{ m: 0 }} value="date" control={<Radio />} label="到期日期" />
+                      <FormControlLabel sx={{ m: 0 }} value="days" control={<Radio />} label="剩余天数" />
                     </RadioGroup>
                   </FormControl>
 

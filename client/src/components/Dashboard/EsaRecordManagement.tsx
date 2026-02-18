@@ -4,6 +4,9 @@ import {
   Alert,
   Box,
   Button,
+  Card,
+  CardActions,
+  CardContent,
   Chip,
   CircularProgress,
   Dialog,
@@ -33,6 +36,7 @@ import {
   Add as AddIcon,
   ContentCopy as CopyIcon,
   Delete as DeleteIcon,
+  Dns as DnsIcon,
   Edit as EditIcon,
   Refresh as RefreshIcon,
 } from '@mui/icons-material';
@@ -104,6 +108,8 @@ const BIZ_NAME_OPTIONS: Array<{ value: string; label: string; help: string }> = 
   { value: 'api', label: 'API', help: '接口/JSON 等 API 加速' },
   { value: 'image_video', label: 'Image/Video（图像/视频）', help: '图片/视频等大对象加速' },
 ];
+
+const esaMetaChipSx = { height: 22, fontSize: '0.72rem' } as const;
 
 type CertificateTypeOption = { value: string; label: string; disabled?: boolean };
 
@@ -249,6 +255,7 @@ export default function EsaRecordManagement({
 
   const [dialogOpen, setDialogOpen] = useState(false);
   const [editing, setEditing] = useState<EsaDnsRecord | null>(null);
+  const [mobileEditingRecordId, setMobileEditingRecordId] = useState<string | null>(null);
   const [submitError, setSubmitError] = useState<string | null>(null);
   const [cnameGuide, setCnameGuide] = useState<{ recordName: string; recordCname: string } | null>(null);
   const [copiedKey, setCopiedKey] = useState<string | null>(null);
@@ -424,6 +431,7 @@ export default function EsaRecordManagement({
 
   const openAdd = () => {
     setEditing(null);
+    setMobileEditingRecordId(null);
     setSubmitError(null);
     setHost('');
     setType('A/AAAA');
@@ -436,7 +444,7 @@ export default function EsaRecordManagement({
     setDialogOpen(true);
   };
 
-  const openEdit = (r: EsaDnsRecord) => {
+  const applyEditingRecord = (r: EsaDnsRecord) => {
     const dataValue = getRecordValue(r);
     const dataPriority = (r.data as any)?.Priority;
 
@@ -450,6 +458,16 @@ export default function EsaRecordManagement({
     setComment(r.comment || '');
     setPriority(typeof dataPriority === 'number' && Number.isFinite(dataPriority) ? String(dataPriority) : '');
     setBizName(r.bizName || 'web');
+  };
+
+  const openEdit = (r: EsaDnsRecord) => {
+    applyEditingRecord(r);
+    if (isMobile) {
+      setMobileEditingRecordId(r.recordId);
+      setDialogOpen(false);
+      return;
+    }
+    setMobileEditingRecordId(null);
     setDialogOpen(true);
   };
 
@@ -465,6 +483,7 @@ export default function EsaRecordManagement({
 
   const closeDialog = () => {
     setDialogOpen(false);
+    setMobileEditingRecordId(null);
     setEditing(null);
     setSubmitError(null);
   };
@@ -727,12 +746,6 @@ export default function EsaRecordManagement({
     deleteMutation.mutate({ credentialId, recordId: r.recordId, region });
   };
 
-  const tableRecords = useMemo(() => {
-    const kw = keyword.trim().toLowerCase();
-    if (!kw) return records;
-    return records.filter((r) => String(r.recordName || '').toLowerCase().includes(kw));
-  }, [records, keyword]);
-
   const {
     data: cnameGuideStatusData,
     isFetching: isCnameGuideStatusFetching,
@@ -754,6 +767,255 @@ export default function EsaRecordManagement({
     ]);
   };
 
+  const tableRecords = useMemo(() => {
+    const kw = keyword.trim().toLowerCase();
+    if (!kw) return records;
+    return records.filter((r) => String(r.recordName || '').toLowerCase().includes(kw));
+  }, [records, keyword]);
+
+  const renderRecordEditorFields = (topMargin: number, compact = false) => (
+    <Stack spacing={2.5} sx={{ mt: topMargin }}>
+      {submitError && <Alert severity="error">{submitError}</Alert>}
+
+      {!compact && isCnameAccess && (
+        <Alert severity="info">
+          当前站点为 CNAME 接入：代理（Proxied）默认开启且不可关闭，仅支持添加 A/AAAA 或 CNAME 记录。
+        </Alert>
+      )}
+
+      <TextField
+        label="主机记录"
+        placeholder="@ / www / a.b"
+        value={host}
+        onChange={(e) => setHost(e.target.value)}
+        fullWidth
+        size="small"
+        disabled={isSaving || !!editing}
+        helperText={compact ? undefined : (editing ? '更新记录不支持修改主机记录（如需修改请删除后重建）' : `将自动补全为 FQDN（当前站点：${siteName}）`)}
+      />
+
+      <TextField
+        select
+        label="记录类型"
+        value={type}
+        onChange={(e) => setType(e.target.value)}
+        fullWidth
+        size="small"
+        disabled={isSaving || !!editing}
+        helperText={compact ? undefined : (editing ? 'ESA 更新记录不支持修改类型/主机记录（如需修改请删除后重建）' : undefined)}
+        SelectProps={{ native: true }}
+      >
+        {typeOptions.map((t) => (
+          <option key={t} value={t}>{t}</option>
+        ))}
+      </TextField>
+
+      <TextField
+        label="记录值"
+        placeholder={type === 'A/AAAA' ? '1.2.3.4, 2001:db8::1' : 'example.com'}
+        value={value}
+        onChange={(e) => setValue(e.target.value)}
+        fullWidth
+        size="small"
+        disabled={isSaving}
+        helperText={compact ? undefined : (type === 'A/AAAA' ? '至少包含一个 IPv4；多个 IP 用逗号分隔' : undefined)}
+      />
+
+      {showPriority && (
+        <TextField
+          label="MX 优先级"
+          placeholder="0"
+          value={priority}
+          onChange={(e) => setPriority(e.target.value)}
+          fullWidth
+          size="small"
+          disabled={isSaving}
+        />
+      )}
+
+      <TextField
+        label="TTL（秒）"
+        placeholder="30"
+        value={ttl}
+        onChange={(e) => setTtl(e.target.value)}
+        fullWidth
+        size="small"
+        disabled={isSaving}
+        helperText={compact ? undefined : '范围 30~86400；填 1 由系统决定'}
+      />
+
+      <FormControlLabel
+        control={<Switch checked={proxyEnabled} onChange={(e) => setProxied(e.target.checked)} disabled={isSaving || !proxyEditable} />}
+        label="代理（Proxied）"
+      />
+
+      {requiresBizName && (
+        <TextField
+          select
+          label="业务场景（BizName）"
+          value={bizName}
+          onChange={(e) => setBizName(e.target.value)}
+          fullWidth
+          size="small"
+          disabled={isSaving}
+          helperText={compact ? undefined : BIZ_NAME_OPTIONS.find((o) => o.value === bizName)?.help}
+          SelectProps={{ native: true }}
+        >
+          {BIZ_NAME_OPTIONS.map((o) => (
+            <option key={o.value} value={o.value}>{o.label}</option>
+          ))}
+        </TextField>
+      )}
+
+      <TextField
+        label="备注（可选）"
+        placeholder="最多 100 字符"
+        value={comment}
+        onChange={(e) => setComment(e.target.value)}
+        fullWidth
+        size="small"
+        disabled={isSaving}
+      />
+
+      {!compact && (
+        <>
+          <Divider />
+          <Alert severity="info">
+            当前实现仅对接 ESA 的 Record API（List/Create/Update/Delete），并用 `Data.Value` 作为主要值字段；目前仅支持 A/AAAA、CNAME、TXT、MX、NS，其他复杂类型后续再补。
+          </Alert>
+        </>
+      )}
+    </Stack>
+  );
+
+  const renderMobileView = () => (
+    records.length === 0 ? (
+      <Box sx={{ display: 'flex', flexDirection: 'column', alignItems: 'center', py: 4, color: 'text.secondary' }}>
+        <Typography variant="body2">暂无 DNS 记录</Typography>
+      </Box>
+    ) : (
+      <Stack spacing={1}>
+        {records.map((r) => {
+          const isInlineEditing = isMobile && mobileEditingRecordId === r.recordId && editing?.recordId === r.recordId;
+          if (isInlineEditing) {
+            return (
+              <Card key={r.recordId} variant="outlined" sx={{ borderRadius: 2 }}>
+                <CardContent sx={{ p: 2, pb: 0, '&:last-child': { pb: 0 } }}>
+                  <Stack direction="row" alignItems="center" spacing={1} sx={{ pb: 1.5, borderBottom: 1, borderColor: 'divider' }}>
+                    <DnsIcon color="primary" sx={{ fontSize: '1em' }} />
+                    <Typography variant="subtitle2" color="primary.main" fontWeight="bold">编辑记录</Typography>
+                  </Stack>
+                  {renderRecordEditorFields(1.5, true)}
+                </CardContent>
+                <CardActions sx={{ justifyContent: 'flex-end', p: 2, pt: 0 }}>
+                  <Button size="small" onClick={closeDialog} color="inherit" disabled={isSaving}>
+                    取消
+                  </Button>
+                  <Button size="small" onClick={handleSave} variant="contained" disabled={isSaving}>
+                    {isSaving ? <CircularProgress size={18} color="inherit" /> : '保存'}
+                  </Button>
+                </CardActions>
+              </Card>
+            );
+          }
+
+          const cnameStatus = r.recordCname ? getCnameStatusLabel(cnameStatusByRecordName.get(r.recordName)) : null;
+          const httpsStatus = getHttpsStatusLabel(certStatusByRecordName.get(r.recordName));
+
+          return (
+            <Card key={r.recordId} variant="outlined" sx={{ borderRadius: 2 }}>
+              <CardContent sx={{ p: 1.5, pb: 0, '&:last-child': { pb: 0 } }}>
+                <Stack direction="row" alignItems="center" spacing={1} sx={{ mb: 0.5 }}>
+                  <Chip
+                    label={r.type || '-'}
+                    size="small"
+                    sx={{
+                      fontWeight: 'bold',
+                      height: 20,
+                      fontSize: '0.7rem',
+                      bgcolor: (theme) => theme.palette.primary.main,
+                      color: 'white',
+                      flexShrink: 0,
+                    }}
+                  />
+                  <Typography variant="subtitle2" fontWeight="600" sx={{ wordBreak: 'break-all', lineHeight: 1.2, flexGrow: 1 }}>
+                    {toDisplayHost(r.recordName, siteName)}
+                  </Typography>
+                </Stack>
+
+                <Typography
+                  variant="body2"
+                  color="text.secondary"
+                  sx={{
+                    mb: 1,
+                    fontFamily: 'monospace',
+                    wordBreak: 'break-all',
+                    fontSize: '0.85rem',
+                    display: '-webkit-box',
+                    WebkitLineClamp: 2,
+                    WebkitBoxOrient: 'vertical',
+                    overflow: 'hidden',
+                  }}
+                >
+                  {getRecordValue(r)}
+                </Typography>
+
+                <Stack direction="row" spacing={0.5} alignItems="center" sx={{ mb: 1, flexWrap: 'wrap' }}>
+                  {cnameStatus && (
+                    <Chip
+                      size="small"
+                      variant="outlined"
+                      label={`CNAME ${cnameStatus.label}`}
+                      color={cnameStatus.color}
+                      sx={esaMetaChipSx}
+                    />
+                  )}
+                  <Chip
+                    size="small"
+                    variant="outlined"
+                    label={`HTTPS ${httpsStatus.label}`}
+                    color={httpsStatus.color}
+                    clickable
+                    onClick={() => openEdit(r)}
+                    sx={esaMetaChipSx}
+                  />
+                </Stack>
+
+                {r.comment && (
+                  <Typography variant="caption" color="text.secondary" sx={{ display: 'block', mb: 1 }}>
+                    备注：{r.comment}
+                  </Typography>
+                )}
+              </CardContent>
+              <Divider sx={{ borderStyle: 'dashed' }} />
+              <CardActions sx={{ justifyContent: 'flex-end', p: 0.5, px: 1 }}>
+                <Button
+                  size="small"
+                  startIcon={<EditIcon sx={{ fontSize: 16 }} />}
+                  onClick={() => openEdit(r)}
+                  sx={{ color: 'text.secondary', fontSize: '0.75rem', minWidth: 'auto', px: 1 }}
+                  disabled={deleteMutation.isPending}
+                >
+                  编辑
+                </Button>
+                <Button
+                  size="small"
+                  startIcon={<DeleteIcon sx={{ fontSize: 16 }} />}
+                  color="error"
+                  onClick={() => handleDelete(r)}
+                  sx={{ fontSize: '0.75rem', minWidth: 'auto', px: 1 }}
+                  disabled={deleteMutation.isPending}
+                >
+                  删除
+                </Button>
+              </CardActions>
+            </Card>
+          );
+        })}
+      </Stack>
+    )
+  );
+
   return (
     <Box
       sx={{
@@ -770,22 +1032,14 @@ export default function EsaRecordManagement({
         justifyContent="space-between"
         alignItems={{ xs: 'stretch', sm: 'center' }}
         spacing={{ xs: 2, sm: 0 }}
-        sx={{ borderBottom: 1, borderColor: 'divider', mb: 2 }}
+        sx={{ borderBottom: { xs: 0, sm: 1 }, borderColor: 'divider', mb: 2 }}
       >
         <Tabs value={0} sx={{ borderBottom: 0, minHeight: { xs: 40, sm: 48 } }}>
           <Tab label="DNS 记录" sx={{ minHeight: { xs: 40, sm: 48 }, py: 1 }} />
         </Tabs>
 
         <Box sx={{ mb: 1, mr: { xs: 0, sm: 1 }, flexShrink: 0 }}>
-          <Stack direction={{ xs: 'column', sm: 'row' }} spacing={1} sx={{ width: '100%' }}>
-            <TextField
-              size="small"
-              placeholder="搜索记录..."
-              value={keyword}
-              onChange={(e) => setKeyword(e.target.value)}
-              sx={{ width: { xs: '100%', sm: 240 } }}
-              disabled={isLoading}
-            />
+          {isMobile ? (
             <Stack direction="row" spacing={1} sx={{ width: '100%' }}>
               <Button
                 variant="contained"
@@ -808,7 +1062,38 @@ export default function EsaRecordManagement({
                 {isFetching || isCnameStatusFetching || isCertStatusFetching ? '刷新中...' : '刷新'}
               </Button>
             </Stack>
-          </Stack>
+          ) : (
+            <Stack direction="row" spacing={1} sx={{ width: '100%' }}>
+              <TextField
+                size="small"
+                placeholder="搜索记录..."
+                value={keyword}
+                onChange={(e) => setKeyword(e.target.value)}
+                sx={{ width: 240 }}
+                disabled={isLoading}
+              />
+              <Stack direction="row" spacing={1}>
+                <Button
+                  variant="contained"
+                  size="small"
+                  startIcon={<AddIcon />}
+                  onClick={openAdd}
+                  disabled={isLoading || deleteMutation.isPending}
+                >
+                  添加记录
+                </Button>
+                <Button
+                  variant="outlined"
+                  size="small"
+                  startIcon={<RefreshIcon />}
+                  onClick={handleRefreshAll}
+                  disabled={isLoading || isFetching || isCnameStatusFetching || isCertStatusFetching}
+                >
+                  {isFetching || isCnameStatusFetching || isCertStatusFetching ? '刷新中...' : '刷新'}
+                </Button>
+              </Stack>
+            </Stack>
+          )}
         </Box>
       </Stack>
 
@@ -836,101 +1121,105 @@ export default function EsaRecordManagement({
         </Box>
       ) : (
         <>
-          <TableContainer sx={{ width: '100%', overflowX: 'auto', maxWidth: '100%' }}>
-            <Table size="small" sx={{ minWidth: 980, '& .MuiTableCell-root': { whiteSpace: 'nowrap' } }}>
-              <TableHead>
-                <TableRow>
-                  <TableCell>类型</TableCell>
-                  <TableCell>名称</TableCell>
-                  <TableCell sx={{ maxWidth: 320, overflow: 'hidden', textOverflow: 'ellipsis' }}>内容</TableCell>
-                  <TableCell sx={{ maxWidth: 260, overflow: 'hidden', textOverflow: 'ellipsis' }}>CNAME</TableCell>
-                  <TableCell width={110}>CNAME 状态</TableCell>
-                  <TableCell width={110}>HTTPS</TableCell>
-                  <TableCell width={80}>TTL</TableCell>
-                  <TableCell width={90}>代理</TableCell>
-                  <TableCell>备注</TableCell>
-                  <TableCell width={90} align="right" />
-                </TableRow>
-              </TableHead>
-              <TableBody>
-                {tableRecords.length === 0 ? (
+          {isMobile ? (
+            renderMobileView()
+          ) : (
+            <TableContainer sx={{ width: '100%', overflowX: 'auto', maxWidth: '100%' }}>
+              <Table size="small" sx={{ minWidth: 980, '& .MuiTableCell-root': { whiteSpace: 'nowrap' } }}>
+                <TableHead>
                   <TableRow>
-                    <TableCell colSpan={10} align="center" sx={{ py: 8 }}>
-                      <Typography variant="body1" color="text.secondary">
-                        暂无记录
-                      </Typography>
-                    </TableCell>
+                    <TableCell>类型</TableCell>
+                    <TableCell>名称</TableCell>
+                    <TableCell sx={{ maxWidth: 320, overflow: 'hidden', textOverflow: 'ellipsis' }}>内容</TableCell>
+                    <TableCell sx={{ maxWidth: 260, overflow: 'hidden', textOverflow: 'ellipsis' }}>CNAME</TableCell>
+                    <TableCell width={110}>CNAME 状态</TableCell>
+                    <TableCell width={110}>HTTPS</TableCell>
+                    <TableCell width={80}>TTL</TableCell>
+                    <TableCell width={90}>代理</TableCell>
+                    <TableCell>备注</TableCell>
+                    <TableCell width={90} align="right" />
                   </TableRow>
-                ) : (
-                  tableRecords.map((r) => (
-                    <TableRow key={r.recordId} hover>
-                      <TableCell>{r.type || '-'}</TableCell>
-                      <TableCell>{toDisplayHost(r.recordName, siteName)}</TableCell>
-                      <TableCell sx={{ fontFamily: 'monospace', fontSize: '0.85rem', maxWidth: 320, overflow: 'hidden', textOverflow: 'ellipsis' }}>
-                        {getRecordValue(r)}
+                </TableHead>
+                <TableBody>
+                  {tableRecords.length === 0 ? (
+                    <TableRow>
+                      <TableCell colSpan={10} align="center" sx={{ py: 8 }}>
+                        <Typography variant="body1" color="text.secondary">
+                          暂无记录
+                        </Typography>
                       </TableCell>
-                      <TableCell sx={{ maxWidth: 260, overflow: 'hidden', textOverflow: 'ellipsis' }}>
-                        {r.recordCname ? (
-                          <Stack direction="row" spacing={0.5} alignItems="center">
-                            <Typography variant="body2" sx={{ fontFamily: 'monospace', fontSize: '0.85rem', maxWidth: 220, overflow: 'hidden', textOverflow: 'ellipsis' }}>
-                              {r.recordCname}
-                            </Typography>
-                            <Tooltip title={copiedKey === `cname:${r.recordId}` ? '已复制' : '复制'}>
-                              <IconButton size="small" onClick={() => handleCopy(`cname:${r.recordId}`, r.recordCname)}>
-                                <CopyIcon fontSize="inherit" />
-                              </IconButton>
-                            </Tooltip>
-                          </Stack>
-                        ) : (
-                          '-'
-                        )}
-                      </TableCell>
-                      <TableCell>
-                        {r.recordCname ? (
-                          <Chip
-                            size="small"
-                            variant="outlined"
-                            {...(() => {
-                              const meta = getCnameStatusLabel(cnameStatusByRecordName.get(r.recordName));
-                              return { label: meta.label, color: meta.color };
-                            })()}
-                          />
-                        ) : (
-                          '-'
-                        )}
-                      </TableCell>
-                      <TableCell>
-                        {(() => {
-                          const meta = getHttpsStatusLabel(certStatusByRecordName.get(r.recordName));
-                          return (
+                    </TableRow>
+                  ) : (
+                    tableRecords.map((r) => (
+                      <TableRow key={r.recordId} hover>
+                        <TableCell>{r.type || '-'}</TableCell>
+                        <TableCell>{toDisplayHost(r.recordName, siteName)}</TableCell>
+                        <TableCell sx={{ fontFamily: 'monospace', fontSize: '0.85rem', maxWidth: 320, overflow: 'hidden', textOverflow: 'ellipsis' }}>
+                          {getRecordValue(r)}
+                        </TableCell>
+                        <TableCell sx={{ maxWidth: 260, overflow: 'hidden', textOverflow: 'ellipsis' }}>
+                          {r.recordCname ? (
+                            <Stack direction="row" spacing={0.5} alignItems="center">
+                              <Typography variant="body2" sx={{ fontFamily: 'monospace', fontSize: '0.85rem', maxWidth: 220, overflow: 'hidden', textOverflow: 'ellipsis' }}>
+                                {r.recordCname}
+                              </Typography>
+                              <Tooltip title={copiedKey === `cname:${r.recordId}` ? '已复制' : '复制'}>
+                                <IconButton size="small" onClick={() => handleCopy(`cname:${r.recordId}`, r.recordCname)}>
+                                  <CopyIcon fontSize="inherit" />
+                                </IconButton>
+                              </Tooltip>
+                            </Stack>
+                          ) : (
+                            '-'
+                          )}
+                        </TableCell>
+                        <TableCell>
+                          {r.recordCname ? (
                             <Chip
                               size="small"
                               variant="outlined"
-                              label={meta.label}
-                              color={meta.color}
-                              clickable
-                              onClick={() => openHttps(r)}
+                              {...(() => {
+                                const meta = getCnameStatusLabel(cnameStatusByRecordName.get(r.recordName));
+                                return { label: meta.label, color: meta.color };
+                              })()}
                             />
-                          );
-                        })()}
-                      </TableCell>
-                      <TableCell>{r.ttl ?? '-'}</TableCell>
-                      <TableCell>{r.proxied ? '是' : '否'}</TableCell>
-                      <TableCell sx={{ color: 'text.secondary' }}>{r.comment || '-'}</TableCell>
-                      <TableCell align="right">
-                        <IconButton size="small" onClick={() => openEdit(r)} disabled={deleteMutation.isPending}>
-                          <EditIcon fontSize="inherit" />
-                        </IconButton>
-                        <IconButton size="small" onClick={() => handleDelete(r)} disabled={deleteMutation.isPending}>
-                          <DeleteIcon fontSize="inherit" />
-                        </IconButton>
-                      </TableCell>
-                    </TableRow>
-                  ))
-                )}
-              </TableBody>
-            </Table>
-          </TableContainer>
+                          ) : (
+                            '-'
+                          )}
+                        </TableCell>
+                        <TableCell>
+                          {(() => {
+                            const meta = getHttpsStatusLabel(certStatusByRecordName.get(r.recordName));
+                            return (
+                              <Chip
+                                size="small"
+                                variant="outlined"
+                                label={meta.label}
+                                color={meta.color}
+                                clickable
+                                onClick={() => openHttps(r)}
+                              />
+                            );
+                          })()}
+                        </TableCell>
+                        <TableCell>{r.ttl ?? '-'}</TableCell>
+                        <TableCell>{r.proxied ? '是' : '否'}</TableCell>
+                        <TableCell sx={{ color: 'text.secondary' }}>{r.comment || '-'}</TableCell>
+                        <TableCell align="right">
+                          <IconButton size="small" onClick={() => openEdit(r)} disabled={deleteMutation.isPending}>
+                            <EditIcon fontSize="inherit" />
+                          </IconButton>
+                          <IconButton size="small" onClick={() => handleDelete(r)} disabled={deleteMutation.isPending}>
+                            <DeleteIcon fontSize="inherit" />
+                          </IconButton>
+                        </TableCell>
+                      </TableRow>
+                    ))
+                  )}
+                </TableBody>
+              </Table>
+            </TableContainer>
+          )}
 
           <Stack direction="row" spacing={1} alignItems="center" sx={{ mt: 1, color: 'text.secondary' }}>
             <Typography variant="caption">共 {total} 条</Typography>
@@ -1224,117 +1513,23 @@ export default function EsaRecordManagement({
         </DialogActions>
       </Dialog>
 
-      <Dialog open={dialogOpen} onClose={closeDialog} maxWidth="sm" fullWidth fullScreen={isMobile}>
-        <DialogTitle>{editing ? '编辑记录' : '添加记录'}</DialogTitle>
-        <DialogContent>
-          <Stack spacing={2.5} sx={{ mt: 1 }}>
-            {submitError && <Alert severity="error">{submitError}</Alert>}
-
-            {isCnameAccess && (
-              <Alert severity="info">
-                当前站点为 CNAME 接入：代理（Proxied）默认开启且不可关闭，仅支持添加 A/AAAA 或 CNAME 记录。
-              </Alert>
-            )}
-
-            <TextField
-              label="主机记录"
-              placeholder="@ / www / a.b"
-              value={host}
-              onChange={(e) => setHost(e.target.value)}
-              fullWidth
-              size="small"
-              disabled={isSaving || !!editing}
-              helperText={editing ? '更新记录不支持修改主机记录（如需修改请删除后重建）' : `将自动补全为 FQDN（当前站点：${siteName}）`}
-            />
-
-            <TextField
-              select
-              label="记录类型"
-              value={type}
-              onChange={(e) => setType(e.target.value)}
-              fullWidth
-              size="small"
-              disabled={isSaving || !!editing}
-              helperText={editing ? 'ESA 更新记录不支持修改类型/主机记录（如需修改请删除后重建）' : undefined}
-              SelectProps={{ native: true }}
-            >
-              {typeOptions.map(t => (
-                <option key={t} value={t}>{t}</option>
-              ))}
-            </TextField>
-
-            <TextField
-              label="记录值"
-              placeholder={type === 'A/AAAA' ? '1.2.3.4, 2001:db8::1' : 'example.com'}
-              value={value}
-              onChange={(e) => setValue(e.target.value)}
-              fullWidth
-              size="small"
-              disabled={isSaving}
-              helperText={type === 'A/AAAA' ? '至少包含一个 IPv4；多个 IP 用逗号分隔' : undefined}
-            />
-
-            {showPriority && (
-              <TextField
-                label="MX 优先级"
-                placeholder="0"
-                value={priority}
-                onChange={(e) => setPriority(e.target.value)}
-                fullWidth
-                size="small"
-                disabled={isSaving}
-              />
-            )}
-
-            <TextField
-              label="TTL（秒）"
-              placeholder="30"
-              value={ttl}
-              onChange={(e) => setTtl(e.target.value)}
-              fullWidth
-              size="small"
-              disabled={isSaving}
-              helperText="范围 30~86400；填 1 由系统决定"
-            />
-
-            <FormControlLabel
-              control={<Switch checked={proxyEnabled} onChange={(e) => setProxied(e.target.checked)} disabled={isSaving || !proxyEditable} />}
-              label="代理（Proxied）"
-            />
-
-            {requiresBizName && (
-              <TextField
-                select
-                label="业务场景（BizName）"
-                value={bizName}
-                onChange={(e) => setBizName(e.target.value)}
-                fullWidth
-                size="small"
-                disabled={isSaving}
-                helperText={BIZ_NAME_OPTIONS.find((o) => o.value === bizName)?.help}
-                SelectProps={{ native: true }}
-              >
-                {BIZ_NAME_OPTIONS.map((o) => (
-                  <option key={o.value} value={o.value}>{o.label}</option>
-                ))}
-              </TextField>
-            )}
-
-            <TextField
-              label="备注（可选）"
-              placeholder="最多 100 字符"
-              value={comment}
-              onChange={(e) => setComment(e.target.value)}
-              fullWidth
-              size="small"
-              disabled={isSaving}
-            />
-
-            <Divider />
-            <Alert severity="info">
-              当前实现仅对接 ESA 的 Record API（List/Create/Update/Delete），并用 `Data.Value` 作为主要值字段；目前仅支持 A/AAAA、CNAME、TXT、MX、NS，其他复杂类型后续再补。
-            </Alert>
+      <Dialog
+        open={dialogOpen}
+        onClose={closeDialog}
+        maxWidth="sm"
+        fullWidth
+        PaperProps={{
+          sx: { borderRadius: 2 },
+        }}
+      >
+        <DialogTitle sx={{ borderBottom: 1, borderColor: 'divider', pb: 2 }}>
+          <Stack direction="row" alignItems="center" spacing={1}>
+            <DnsIcon color="primary" sx={{ fontSize: '1em' }} />
+            <Typography variant="h6" fontWeight="bold">{editing ? '编辑记录' : '添加记录'}</Typography>
           </Stack>
+        </DialogTitle>
+        <DialogContent sx={{ mt: 2 }}>
+          {renderRecordEditorFields(1)}
         </DialogContent>
         <DialogActions sx={{ px: 3, pb: 3 }}>
           <Button onClick={closeDialog} color="inherit" disabled={isSaving}>

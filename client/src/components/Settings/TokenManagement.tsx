@@ -215,7 +215,6 @@ export default function TokenManagement() {
                           size="small"
                           color="error"
                           onClick={() => handleDeleteClick(account)}
-                          disabled={accounts.length <= 1}
                         >
                           <DeleteIcon fontSize="small" />
                         </IconButton>

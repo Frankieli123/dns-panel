@@ -32,6 +32,12 @@ export function AccountProvider({ children }: { children: ReactNode }) {
         const accountList = response.data.credentials;
         setAccounts(accountList);
 
+        if (accountList.length === 0) {
+          setCurrentAccountId(null);
+          localStorage.removeItem(STORAGE_KEY);
+          return;
+        }
+
         // 初始化当前账户
         if (accountList.length > 0) {
           // 尝试从 localStorage 恢复上次选中的账户

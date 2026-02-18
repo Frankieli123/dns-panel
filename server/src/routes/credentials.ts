@@ -258,24 +258,6 @@ router.delete('/:id', async (req, res) => {
       return errorResponse(res, '凭证不存在', 404);
     }
 
-    // 检查是否是最后一个凭证
-    const count = await prisma.cfCredential.count({
-      where: { userId },
-    });
-
-    if (count === 1) {
-      await createLog({
-        userId,
-        action: 'DELETE',
-        resourceType: 'CREDENTIAL',
-        status: 'FAILED',
-        ipAddress: req.ip,
-        oldValue: JSON.stringify({ id: existing.id, name: existing.name }),
-        errorMessage: '不能删除最后一个凭证',
-      });
-      return errorResponse(res, '不能删除最后一个凭证', 400);
-    }
-
     await prisma.cfCredential.delete({
       where: { id: credentialId },
     });

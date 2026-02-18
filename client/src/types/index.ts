@@ -87,9 +87,11 @@ export interface Domain {
   provider?: ProviderType;
   region?: string;
   accessType?: string;
+  coverage?: string;
   instanceId?: string;
   planName?: string;
   planSpecName?: string;
+  tags?: Record<string, string>;
 }
 
 /**
