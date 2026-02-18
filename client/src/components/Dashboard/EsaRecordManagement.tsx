@@ -162,7 +162,6 @@ export default function EsaRecordManagement({
   const normalizedAccessType = String(accessType || '').trim().toUpperCase();
   const isCnameAccess = normalizedAccessType === 'CNAME';
 
-  const [keyword, setKeyword] = useState('');
   const [page, setPage] = useState(0);
   const rowsPerPage = 20;
 
@@ -176,13 +175,11 @@ export default function EsaRecordManagement({
     error,
     refetch: refetchRecords,
   } = useQuery({
-    queryKey: ['esa-records', credentialId, siteId, region, keyword, pageNumber, pageSize],
+    queryKey: ['esa-records', credentialId, siteId, region, pageNumber, pageSize],
     queryFn: () => listEsaRecords({
       credentialId,
       siteId,
       region,
-      recordName: keyword.trim() || undefined,
-      recordMatchType: keyword.trim() ? 'fuzzy' : undefined,
       page: pageNumber,
       pageSize,
     }),
@@ -251,7 +248,7 @@ export default function EsaRecordManagement({
 
   useEffect(() => {
     setPage(0);
-  }, [keyword, credentialId, siteId]);
+  }, [credentialId, siteId]);
 
   const [dialogOpen, setDialogOpen] = useState(false);
   const [editing, setEditing] = useState<EsaDnsRecord | null>(null);
@@ -767,11 +764,7 @@ export default function EsaRecordManagement({
     ]);
   };
 
-  const tableRecords = useMemo(() => {
-    const kw = keyword.trim().toLowerCase();
-    if (!kw) return records;
-    return records.filter((r) => String(r.recordName || '').toLowerCase().includes(kw));
-  }, [records, keyword]);
+  const tableRecords = records;
 
   const renderRecordEditorFields = (topMargin: number, compact = false) => (
     <Stack spacing={2.5} sx={{ mt: topMargin }}>
@@ -907,7 +900,7 @@ export default function EsaRecordManagement({
                   </Stack>
                   {renderRecordEditorFields(1.5, true)}
                 </CardContent>
-                <CardActions sx={{ justifyContent: 'flex-end', p: 2, pt: 0 }}>
+                <CardActions sx={{ justifyContent: 'flex-end', p: 2, pt: 1 }}>
                   <Button size="small" onClick={closeDialog} color="inherit" disabled={isSaving}>
                     取消
                   </Button>
@@ -1032,7 +1025,10 @@ export default function EsaRecordManagement({
         justifyContent="space-between"
         alignItems={{ xs: 'stretch', sm: 'center' }}
         spacing={{ xs: 2, sm: 0 }}
-        sx={{ borderBottom: { xs: 0, sm: 1 }, borderColor: 'divider', mb: 2 }}
+        sx={{
+          borderBottom: { xs: 'none', sm: '1px solid rgba(0, 0, 0, 0.12)' },
+          mb: 2,
+        }}
       >
         <Tabs value={0} sx={{ borderBottom: 0, minHeight: { xs: 40, sm: 48 } }}>
           <Tab label="DNS 记录" sx={{ minHeight: { xs: 40, sm: 48 }, py: 1 }} />
@@ -1063,35 +1059,25 @@ export default function EsaRecordManagement({
               </Button>
             </Stack>
           ) : (
-            <Stack direction="row" spacing={1} sx={{ width: '100%' }}>
-              <TextField
+            <Stack direction="row" spacing={1}>
+              <Button
+                variant="contained"
                 size="small"
-                placeholder="搜索记录..."
-                value={keyword}
-                onChange={(e) => setKeyword(e.target.value)}
-                sx={{ width: 240 }}
-                disabled={isLoading}
-              />
-              <Stack direction="row" spacing={1}>
-                <Button
-                  variant="contained"
-                  size="small"
-                  startIcon={<AddIcon />}
-                  onClick={openAdd}
-                  disabled={isLoading || deleteMutation.isPending}
-                >
-                  添加记录
-                </Button>
-                <Button
-                  variant="outlined"
-                  size="small"
-                  startIcon={<RefreshIcon />}
-                  onClick={handleRefreshAll}
-                  disabled={isLoading || isFetching || isCnameStatusFetching || isCertStatusFetching}
-                >
-                  {isFetching || isCnameStatusFetching || isCertStatusFetching ? '刷新中...' : '刷新'}
-                </Button>
-              </Stack>
+                startIcon={<AddIcon />}
+                onClick={openAdd}
+                disabled={isLoading || deleteMutation.isPending}
+              >
+                添加记录
+              </Button>
+              <Button
+                variant="outlined"
+                size="small"
+                startIcon={<RefreshIcon />}
+                onClick={handleRefreshAll}
+                disabled={isLoading || isFetching || isCnameStatusFetching || isCertStatusFetching}
+              >
+                {isFetching || isCnameStatusFetching || isCertStatusFetching ? '刷新中...' : '刷新'}
+              </Button>
             </Stack>
           )}
         </Box>
