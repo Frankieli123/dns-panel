@@ -438,14 +438,12 @@ export default function DNSRecordTable({
                 </Typography>
                 <Stack direction="row" spacing={0.5} alignItems="center" sx={{ ml: 'auto', flexShrink: 0 }}>
                   {showProxied && (
-                    <Chip
-                      size="small"
-                      variant="outlined"
-                      icon={record.proxied ? <CloudIcon sx={{ fontSize: 14 }} /> : <CloudQueueIcon sx={{ fontSize: 14 }} />}
-                      label={record.proxied ? '已代理' : '仅 DNS'}
-                      color={record.proxied ? 'info' : 'default'}
-                      sx={{ height: 20, fontSize: '0.68rem', '& .MuiChip-label': { px: 0.75 } }}
-                    />
+                    <Tooltip title={record.proxied ? '已代理' : '仅 DNS'} arrow>
+                      {record.proxied 
+                        ? <CloudIcon sx={{ fontSize: 20, color: '#f38020' }} /> 
+                        : <CloudQueueIcon sx={{ fontSize: 20, color: 'text.disabled' }} />
+                      }
+                    </Tooltip>
                   )}
                   {showStatus && (
                     <Switch
