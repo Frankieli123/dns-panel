@@ -757,28 +757,16 @@ export default function Sidebar({ onClose }: SidebarProps) {
                                             onClose={handleUserMenuClose}
                       
                                             PaperProps={{
-                      
                                               sx: {
-                      
                                                 mt: -1,
-                      
-                                                ml: 1,
-                      
                                                 width: 220,
-                      
                                                 bgcolor: '#1e293b',
-                      
                                                 color: 'white',
-                      
                                                 border: '1px solid rgba(255,255,255,0.1)'
-                      
                                               }
-                      
                                             }}
-                      
-                                            transformOrigin={{ horizontal: 'left', vertical: 'bottom' }}
-                      
-                                            anchorOrigin={{ horizontal: 'left', vertical: 'top' }}
+                                            transformOrigin={{ horizontal: 'center', vertical: 'bottom' }}
+                                            anchorOrigin={{ horizontal: 'center', vertical: 'top' }}
                       
                                           >
                       
