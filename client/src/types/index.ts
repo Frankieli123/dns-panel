@@ -85,6 +85,11 @@ export interface Domain {
   credentialId?: number;
   credentialName?: string;
   provider?: ProviderType;
+  region?: string;
+  accessType?: string;
+  instanceId?: string;
+  planName?: string;
+  planSpecName?: string;
 }
 
 /**

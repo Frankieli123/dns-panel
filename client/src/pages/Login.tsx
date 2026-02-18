@@ -200,11 +200,12 @@ export default function Login() {
                 </Alert>
               )}
 
-              <form onSubmit={handleSubmit(onSubmit)}>
+              <form onSubmit={handleSubmit(onSubmit)} autoComplete="on">
                 <Stack spacing={2.5}>
                   <TextField
                     fullWidth
                     label="用户名或邮箱"
+                    autoComplete="username"
                     {...register('username', { required: '请输入用户名或邮箱' })}
                     error={!!errors.username}
                     helperText={errors.username?.message}
@@ -217,6 +218,7 @@ export default function Login() {
                     fullWidth
                     type={showPassword ? 'text' : 'password'}
                     label="密码"
+                    autoComplete="current-password"
                     {...register('password', { required: '请输入密码' })}
                     error={!!errors.password}
                     helperText={errors.password?.message}
@@ -296,12 +298,13 @@ export default function Login() {
                 </Alert>
               )}
 
-              <form onSubmit={handleSubmit2FA(on2FASubmit)}>
+              <form onSubmit={handleSubmit2FA(on2FASubmit)} autoComplete="off">
                 <Stack spacing={2.5}>
                   <TextField
                     fullWidth
                     label="验证码"
                     placeholder="000000"
+                    autoComplete="one-time-code"
                     {...register2FA('code', { 
                       required: '请输入验证码',
                       pattern: {
@@ -320,6 +323,8 @@ export default function Login() {
                       }
                     }}
                     inputProps={{
+                      inputMode: 'numeric',
+                      pattern: '[0-9]*',
                       maxLength: 6,
                       style: { textAlign: 'center' }
                     }}

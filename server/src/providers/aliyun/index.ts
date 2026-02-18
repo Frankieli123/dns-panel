@@ -201,17 +201,23 @@ export class AliyunProvider extends BaseProvider {
             }
 
             const httpStatus = res.statusCode;
-            if (json?.Code && json?.Message) {
-              reject(this.createError(String(json.Code), String(json.Message), {
+            const code = (json?.Code ?? json?.code) as unknown;
+            const message = (json?.Message ?? json?.message) as unknown;
+            const codeStr = typeof code === 'string' ? code.trim() : code === undefined || code === null ? '' : String(code).trim();
+            const messageStr =
+              typeof message === 'string' ? message.trim() : message === undefined || message === null ? '' : String(message).trim();
+
+            if (codeStr) {
+              reject(this.createError(codeStr, messageStr || codeStr, {
                 httpStatus,
-                meta: { requestId: json.RequestId, action },
+                meta: { requestId: json.RequestId ?? json?.requestId, action },
               }));
               return;
             }
 
             if (httpStatus && httpStatus >= 400) {
               reject(
-                this.createError('HTTP_ERROR', json?.Message ? String(json.Message) : `HTTP 错误: ${httpStatus}`, {
+                this.createError('HTTP_ERROR', messageStr || `HTTP 错误: ${httpStatus}`, {
                   httpStatus,
                   meta: { body: json, action },
                 })

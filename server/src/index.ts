@@ -12,6 +12,7 @@ import logRoutes from './routes/logs';
 // 新增：多提供商路由
 import dnsCredentialRoutes from './routes/dnsCredentials';
 import dnsRecordRoutes from './routes/dnsRecords';
+import aliyunEsaRoutes from './routes/aliyunEsa';
 import domainExpiryRoutes from './routes/domainExpiry';
 import { startDomainExpiryScheduler } from './jobs/domainExpiryScheduler';
 
@@ -35,6 +36,7 @@ app.get('/health', (req, res) => {
 app.use('/api/auth', authRoutes);
 app.use('/api/dns-credentials', dnsCredentialRoutes); // 新版多提供商凭证
 app.use('/api/dns-records', dnsRecordRoutes);        // 新版多提供商 DNS 路由
+app.use('/api/aliyun-esa', aliyunEsaRoutes);         // 阿里云 ESA 站点管理
 app.use('/api/hostnames', hostnameRoutes);
 app.use('/api/logs', logRoutes);
 app.use('/api/domain-expiry', domainExpiryRoutes);

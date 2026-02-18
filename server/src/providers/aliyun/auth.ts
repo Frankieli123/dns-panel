@@ -69,9 +69,13 @@ export function signStringToSign(stringToSign: string, accessKeySecret: string):
 /**
  * 对参数进行签名
  */
-export function signAliyunParams(params: Record<string, string>, accessKeySecret: string): string {
+export function signAliyunParams(
+  params: Record<string, string>,
+  accessKeySecret: string,
+  method: 'GET' | 'POST' = 'GET'
+): string {
   const canonicalized = buildCanonicalizedQuery(params);
-  const stringToSign = buildStringToSign('GET', canonicalized);
+  const stringToSign = buildStringToSign(method, canonicalized);
   return signStringToSign(stringToSign, accessKeySecret);
 }
 
@@ -81,11 +85,12 @@ export function signAliyunParams(params: Record<string, string>, accessKeySecret
 export function buildSignedQuery(
   auth: AliyunAuth,
   action: string,
-  extraParams: Record<string, string | number | undefined>
+  extraParams: Record<string, string | number | undefined>,
+  opts?: { version?: string; method?: 'GET' | 'POST' }
 ): Record<string, string> {
   const common: AliyunCommonParams = {
     Action: action,
-    Version: '2015-01-09',
+    Version: opts?.version || '2015-01-09',
     Format: 'JSON',
     AccessKeyId: auth.accessKeyId,
     SignatureMethod: 'HMAC-SHA1',
@@ -100,6 +105,6 @@ export function buildSignedQuery(
     params[k] = String(v);
   }
 
-  params.Signature = signAliyunParams(params, auth.accessKeySecret);
+  params.Signature = signAliyunParams(params, auth.accessKeySecret, opts?.method || 'GET');
   return params;
 }

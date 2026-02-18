@@ -225,6 +225,7 @@ export default function DnsCredentialManagement() {
   });
 
   const selectedProviderType = watch('provider');
+  const secretValues = watch('secrets');
   const selectedProviderConfig = providers.find(p => p.type === selectedProviderType);
 
   // 加载数据
@@ -584,6 +585,9 @@ export default function DnsCredentialManagement() {
                           })}
                           error={!!errors.secrets?.[field.key]}
                           helperText={errors.secrets?.[field.key]?.message || field.helpText}
+                          InputLabelProps={{
+                            shrink: secretValues && (secretValues as any)[field.key] ? true : undefined,
+                          }}
                           InputProps={{
                             endAdornment: field.type === 'password' ? (
                               <InputAdornment position="end">

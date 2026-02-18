@@ -298,9 +298,13 @@ export default function TwoFactorSettings() {
                 fullWidth
                 label="验证码"
                 placeholder="000000"
+                autoComplete="one-time-code"
+                name="one-time-code"
                 value={verifyCode}
                 onChange={(e) => setVerifyCode(e.target.value.replace(/\D/g, '').slice(0, 6))}
                 inputProps={{
+                  inputMode: 'numeric',
+                  pattern: '[0-9]*',
                   maxLength: 6,
                   style: { textAlign: 'center', letterSpacing: '0.5em', fontSize: '1.2rem' }
                 }}
@@ -311,6 +315,7 @@ export default function TwoFactorSettings() {
                 fullWidth
                 type={showEnablePassword ? 'text' : 'password'}
                 label="确认密码"
+                autoComplete="current-password"
                 value={enablePassword}
                 onChange={(e) => setEnablePassword(e.target.value)}
                 InputProps={{
@@ -382,6 +387,7 @@ export default function TwoFactorSettings() {
               fullWidth
               type={showDisablePassword ? 'text' : 'password'}
               label="请输入密码确认"
+              autoComplete="current-password"
               value={disablePassword}
               onChange={(e) => setDisablePassword(e.target.value)}
               InputProps={{

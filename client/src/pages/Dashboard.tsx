@@ -61,8 +61,10 @@ import {
   Label as NamesiloIcon,
   PowerSettingsNew as PowerdnsIcon,
   RocketLaunch as SpaceshipIcon,
+  Security as EsaIcon,
 } from '@mui/icons-material';
 import { deleteZone, getDomains, refreshDomains } from '@/services/domains';
+import { ESA_SUPPORTED_REGIONS, listEsaSites } from '@/services/aliyunEsa';
 import { getStoredUser } from '@/services/auth';
 import { lookupDomainExpiry } from '@/services/domainExpiry';
 import { formatRelativeTime } from '@/utils/formatters';
@@ -72,6 +74,8 @@ import { ProviderType } from '@/types/dns';
 import DnsManagement from '@/components/DnsManagement/DnsManagement';
 import ProviderAccountTabs from '@/components/Dashboard/ProviderAccountTabs';
 import AddZoneDialog from '@/components/Dashboard/AddZoneDialog';
+import AddEsaSiteDialog from '@/components/Dashboard/AddEsaSiteDialog';
+import EsaRecordManagement from '@/components/Dashboard/EsaRecordManagement';
 import { useProvider } from '@/contexts/ProviderContext';
 
 const DOMAINS_PER_PAGE_STORAGE_KEY = 'dns_domains_per_page';
@@ -97,6 +101,7 @@ export default function Dashboard() {
   const [searchTerm, setSearchTerm] = useState('');
   const [expandedDomainKey, setExpandedDomainKey] = useState<string | null>(null);
   const [addZoneOpen, setAddZoneOpen] = useState(false);
+  const [addEsaSiteOpen, setAddEsaSiteOpen] = useState(false);
   const [zoneMenuAnchor, setZoneMenuAnchor] = useState<HTMLElement | null>(null);
   const [zoneMenuDomain, setZoneMenuDomain] = useState<Domain | null>(null);
   const [deleteZoneOpen, setDeleteZoneOpen] = useState(false);
@@ -104,6 +109,7 @@ export default function Dashboard() {
   const [deleteConfirmInput, setDeleteConfirmInput] = useState('');
   const [page, setPage] = useState(0);
   const [rowsPerPage, setRowsPerPage] = useState(20);
+  const [aliyunPanel, setAliyunPanel] = useState<'dns' | 'esa'>('dns');
   const navigate = useNavigate();
   const location = useLocation();
   const theme = useTheme();
@@ -120,6 +126,16 @@ export default function Dashboard() {
       selectProvider(null);
     }
   }, [isAllScope, selectedProvider, selectProvider]);
+
+  useEffect(() => {
+    if (isAllScope) {
+      setAliyunPanel('dns');
+      return;
+    }
+    if (selectedProvider !== 'aliyun') {
+      setAliyunPanel('dns');
+    }
+  }, [isAllScope, selectedProvider]);
 
   useEffect(() => {
     const raw = localStorage.getItem(DOMAINS_PER_PAGE_STORAGE_KEY);
@@ -198,6 +214,10 @@ export default function Dashboard() {
   const addZoneCredentials = isAllScope ? zoneManageCredentials : currentProviderCredentials;
 
   const showAddZone = isAllScope ? true : isZoneManageProvider(selectedProvider);
+  const canShowEsaPanel = !isAllScope && selectedProvider === 'aliyun';
+  const isEsaPanel = canShowEsaPanel && aliyunPanel === 'esa';
+  const listTitle = isEsaPanel ? '站点' : '域名';
+  const searchPlaceholder = isEsaPanel ? '搜索站点...' : '搜索域名...';
   const initialAddCredentialId = useMemo(() => {
     if (!showAddZone) return undefined;
     if (isAllScope) {
@@ -221,8 +241,125 @@ export default function Dashboard() {
   const { data, isLoading, error, refetch, isRefetching } = useQuery({
     queryKey: isAllScope
       ? ['domains', 'all', allScopeCredentialId, credentials.map(c => c.id)]
-      : ['domains', selectedProvider, selectedCredentialId],
+      : ['domains', selectedProvider, selectedCredentialId, isEsaPanel ? 'esa' : 'dns'],
     queryFn: async () => {
+      if (isEsaPanel) {
+        if (!selectedProvider || currentProviderCredentials.length === 0) {
+          return { data: { domains: [] } };
+        }
+
+        const safeSelectedCredentialId: number | 'all' =
+          selectedCredentialId === 'all'
+            ? 'all'
+            : typeof selectedCredentialId === 'number' && currentProviderCredentials.some(c => c.id === selectedCredentialId)
+              ? selectedCredentialId
+              : currentProviderCredentials.length === 1
+                ? currentProviderCredentials[0].id
+                : 'all';
+
+        const fetchAllSites = async (credId: number) => {
+          const pageSize = 100;
+          const allSites: any[] = [];
+          const errors: any[] = [];
+
+          for (const region of ESA_SUPPORTED_REGIONS) {
+            let page = 1;
+            let total = 0;
+            const regionSites: any[] = [];
+
+            try {
+              while (page <= 200) {
+                const resp = await listEsaSites({ credentialId: credId, page, pageSize, region });
+                const batch = resp.data?.sites || [];
+                total = resp.data?.total ?? total;
+                regionSites.push(...batch.map((s: any) => ({ ...s, region })));
+                if (batch.length === 0) break;
+                if (total > 0 && regionSites.length >= total) break;
+                page += 1;
+              }
+              allSites.push(...regionSites);
+            } catch (e) {
+              errors.push(e);
+            }
+          }
+
+          if (allSites.length === 0 && errors.length > 0) {
+            throw errors[0];
+          }
+
+          return Array.from(
+            new Map(
+              allSites
+                .map((s: any) => ({
+                  ...s,
+                  siteId: s?.siteId === undefined || s?.siteId === null ? (s?.SiteId ?? '') : s.siteId,
+                }))
+                .map((s: any) => [String(s?.siteId || '').trim(), s])
+            ).values()
+          ).filter((s: any) => String(s?.siteId || '').trim());
+        };
+
+        const toDomains = (sites: any[], cred: { id: number; name?: string; provider?: ProviderType }) =>
+          sites
+            .map((s) => {
+              const siteId = s?.siteId === undefined || s?.siteId === null ? '' : String(s.siteId).trim();
+              const name = String(s?.siteName || '').trim();
+              if (!siteId || !name) return null;
+              return {
+                id: siteId,
+                name,
+                status: String(s?.status || 'unknown'),
+                updatedAt: s?.updateTime ? String(s.updateTime) : undefined,
+                credentialId: cred.id,
+                credentialName: cred.name,
+                provider: cred.provider,
+                region: typeof s?.region === 'string' ? s.region : undefined,
+                accessType: typeof s?.accessType === 'string' ? s.accessType : undefined,
+                instanceId:
+                  typeof s?.instanceId === 'string'
+                    ? s.instanceId
+                    : (s?.InstanceId === undefined || s?.InstanceId === null ? undefined : String(s.InstanceId)),
+                planName:
+                  typeof s?.planName === 'string'
+                    ? s.planName
+                    : (s?.PlanName === undefined || s?.PlanName === null ? undefined : String(s.PlanName)),
+                planSpecName:
+                  typeof s?.planSpecName === 'string'
+                    ? s.planSpecName
+                    : (s?.PlanSpecName === undefined || s?.PlanSpecName === null ? undefined : String(s.PlanSpecName)),
+              } as Domain;
+            })
+            .filter((d): d is Domain => !!d);
+
+        if (safeSelectedCredentialId === 'all') {
+          const results = await Promise.allSettled(
+            currentProviderCredentials.map(async (cred) => {
+              const sites = await fetchAllSites(cred.id);
+              return toDomains(sites, cred);
+            })
+          );
+
+          const allDomains: Domain[] = [];
+          results.forEach((result) => {
+            if (result.status === 'fulfilled') {
+              allDomains.push(...result.value);
+            }
+          });
+
+          return { data: { domains: allDomains } };
+        }
+
+        const cred = currentProviderCredentials.find(c => c.id === safeSelectedCredentialId);
+        const sites = await fetchAllSites(safeSelectedCredentialId);
+        const domains = toDomains(sites, {
+          id: safeSelectedCredentialId,
+          name: cred?.name || credentialNameById.get(safeSelectedCredentialId),
+          provider: selectedProvider,
+        });
+
+        return { data: { domains } };
+      }
+
       if (isAllScope) {
         if (credentials.length === 0) {
           return { data: { domains: [] } };
@@ -303,7 +440,7 @@ export default function Dashboard() {
     setSearchTerm('');
     setExpandedDomainKey(null);
     setPage(0);
-  }, [selectedCredentialId, selectedProvider, isAllScope, allScopeCredentialId]);
+  }, [selectedCredentialId, selectedProvider, isAllScope, allScopeCredentialId, aliyunPanel]);
 
   useEffect(() => {
     setPage(0);
@@ -311,6 +448,11 @@ export default function Dashboard() {
   }, [searchTerm]);
 
   const handleRefresh = async () => {
+    if (isEsaPanel) {
+      refetch();
+      return;
+    }
+
     if (isAllScope) {
       if (allScopeCredentialId === 'all') {
         await Promise.all(credentials.map(c => refreshDomains(c.id)));
@@ -455,9 +597,9 @@ export default function Dashboard() {
   };
 
   const canDeleteDomain = (domain: Domain): boolean =>
-    isZoneManageProvider(getDomainProvider(domain)) && typeof domain.credentialId === 'number';
+    !isEsaPanel && isZoneManageProvider(getDomainProvider(domain)) && typeof domain.credentialId === 'number';
 
-  const canOpenZoneMenu = (domain: Domain): boolean => typeof domain.credentialId === 'number';
+  const canOpenZoneMenu = (domain: Domain): boolean => !isEsaPanel && typeof domain.credentialId === 'number';
 
   const zoneMenuProvider = zoneMenuDomain ? getDomainProvider(zoneMenuDomain) : undefined;
   const zoneMenuProviderLabel = zoneMenuProvider ? (PROVIDER_CONFIG[zoneMenuProvider]?.name || zoneMenuProvider) : 'DNS';
@@ -577,21 +719,25 @@ export default function Dashboard() {
                   </Stack>
                 </Box>
                 <Box>
-                  <IconButton
-                    size="small"
-                    onClick={() => navigate(detailPath)}
-                    sx={{ color: 'primary.main', bgcolor: alpha(theme.palette.primary.main, 0.1), mr: 1 }}
-                  >
-                    <OpenInNewIcon fontSize="small" />
-                  </IconButton>
-                  <IconButton
-                    size="small"
-                    onClick={(e) => openZoneMenu(e, domain)}
-                    disabled={!canOpenZoneMenu(domain)}
-                    sx={{ mr: 1 }}
-                  >
-                    <MoreVertIcon fontSize="small" />
-                  </IconButton>
+                  {!isEsaPanel && (
+                    <IconButton
+                      size="small"
+                      onClick={() => navigate(detailPath)}
+                      sx={{ color: 'primary.main', bgcolor: alpha(theme.palette.primary.main, 0.1), mr: 1 }}
+                    >
+                      <OpenInNewIcon fontSize="small" />
+                    </IconButton>
+                  )}
+                  {!isEsaPanel && (
+                    <IconButton
+                      size="small"
+                      onClick={(e) => openZoneMenu(e, domain)}
+                      disabled={!canOpenZoneMenu(domain)}
+                      sx={{ mr: 1 }}
+                    >
+                      <MoreVertIcon fontSize="small" />
+                    </IconButton>
+                  )}
                   <IconButton
                     size="small"
                     onClick={() => setExpandedDomainKey(isExpanded ? null : rowKey)}
@@ -612,18 +758,33 @@ export default function Dashboard() {
                 </Typography>
               </Stack>
 
-              <Stack direction="row" alignItems="center" spacing={0.5} sx={{ color: 'text.secondary', fontSize: '0.75rem', mt: 0.5 }}>
-                <EventIcon sx={{ fontSize: 14 }} />
-                <Typography variant="caption">
-                  {expiryLabel}: {formatExpiryValue(domain.name)}
-                </Typography>
-              </Stack>
+              {!isEsaPanel && (
+                <Stack direction="row" alignItems="center" spacing={0.5} sx={{ color: 'text.secondary', fontSize: '0.75rem', mt: 0.5 }}>
+                  <EventIcon sx={{ fontSize: 14 }} />
+                  <Typography variant="caption">
+                    {expiryLabel}: {formatExpiryValue(domain.name)}
+                  </Typography>
+                </Stack>
+              )}
             </CardContent>
             
             <Collapse in={isExpanded} timeout="auto" unmountOnExit>
               <Divider />
               <Box sx={{ p: 0 }}>
-                <DnsManagement zoneId={domain.id} credentialId={domain.credentialId} />
+                {isEsaPanel ? (
+                  <EsaRecordManagement
+                    credentialId={domain.credentialId as number}
+                    siteId={domain.id}
+                    siteName={domain.name}
+                    region={domain.region}
+                    accessType={domain.accessType}
+                    instanceId={domain.instanceId}
+                    planName={domain.planName}
+                    planSpecName={domain.planSpecName}
+                  />
+                ) : (
+                  <DnsManagement zoneId={domain.id} credentialId={domain.credentialId} />
+                )}
               </Box>
             </Collapse>
           </Card>
@@ -639,11 +800,11 @@ export default function Dashboard() {
         <TableHead>
           <TableRow>
             <TableCell width={50} />
-            <TableCell>域名</TableCell>
+            <TableCell>{isEsaPanel ? '站点' : '域名'}</TableCell>
             {showAccountColumn && <TableCell>所属账户</TableCell>}
             <TableCell>状态</TableCell>
             <TableCell>最后更新</TableCell>
-            <TableCell>{expiryLabel}</TableCell>
+            {!isEsaPanel && <TableCell>{expiryLabel}</TableCell>}
             <TableCell width={52} align="right" />
           </TableRow>
         </TableHead>
@@ -682,15 +843,17 @@ export default function Dashboard() {
                       <Typography variant="body1" fontWeight="600" color="text.primary">
                         {domain.name}
                       </Typography>
-                      <IconButton
-                        size="small"
-                        onClick={(e) => {
-                          e.stopPropagation();
-                          navigate(detailPath);
-                        }}
-                      >
-                        <OpenInNewIcon fontSize="inherit" />
-                      </IconButton>
+                      {!isEsaPanel && (
+                        <IconButton
+                          size="small"
+                          onClick={(e) => {
+                            e.stopPropagation();
+                            navigate(detailPath);
+                          }}
+                        >
+                          <OpenInNewIcon fontSize="inherit" />
+                        </IconButton>
+                      )}
                     </Stack>
                   </TableCell>
 
@@ -742,23 +905,40 @@ export default function Dashboard() {
                   <TableCell sx={{ color: 'text.secondary' }}>
                     {domain.updatedAt ? formatRelativeTime(domain.updatedAt) : '-'}
                   </TableCell>
-                  <TableCell sx={{ color: 'text.secondary' }}>
-                    {formatExpiryValue(domain.name)}
-                  </TableCell>
+                  {!isEsaPanel && (
+                    <TableCell sx={{ color: 'text.secondary' }}>
+                      {formatExpiryValue(domain.name)}
+                    </TableCell>
+                  )}
                   <TableCell align="right" onClick={(e) => e.stopPropagation()}>
-                    <IconButton
-                      size="small"
-                      onClick={(e) => openZoneMenu(e, domain)}
-                      disabled={!canOpenZoneMenu(domain)}
-                    >
-                      <MoreVertIcon fontSize="inherit" />
-                    </IconButton>
+                    {!isEsaPanel && (
+                      <IconButton
+                        size="small"
+                        onClick={(e) => openZoneMenu(e, domain)}
+                        disabled={!canOpenZoneMenu(domain)}
+                      >
+                        <MoreVertIcon fontSize="inherit" />
+                      </IconButton>
+                    )}
                   </TableCell>
                 </TableRow>
                 <TableRow>
-                  <TableCell style={{ padding: 0 }} colSpan={showAccountColumn ? 7 : 6}>
+                  <TableCell style={{ padding: 0 }} colSpan={(showAccountColumn ? 7 : 6) - (isEsaPanel ? 1 : 0)}>
                     <Collapse in={isExpanded} timeout="auto" unmountOnExit>
-                      <DnsManagement zoneId={domain.id} credentialId={domain.credentialId} />
+                      {isEsaPanel ? (
+                        <EsaRecordManagement
+                          credentialId={domain.credentialId as number}
+                          siteId={domain.id}
+                          siteName={domain.name}
+                          region={domain.region}
+                          accessType={domain.accessType}
+                          instanceId={domain.instanceId}
+                          planName={domain.planName}
+                          planSpecName={domain.planSpecName}
+                        />
+                      ) : (
+                        <DnsManagement zoneId={domain.id} credentialId={domain.credentialId} />
+                      )}
                     </Collapse>
                   </TableCell>
                 </TableRow>
@@ -799,7 +979,7 @@ export default function Dashboard() {
             sx={{ mb: 3 }}
           >
             <TextField
-              placeholder="搜索域名..."
+              placeholder={searchPlaceholder}
               value={searchTerm}
               onChange={(e) => setSearchTerm(e.target.value)}
               sx={{ width: { xs: '100%', sm: 300 }, bgcolor: 'background.paper' }}
@@ -818,15 +998,31 @@ export default function Dashboard() {
               alignItems={{ xs: 'stretch', sm: 'center' }}
               justifyContent={{ xs: 'stretch', sm: 'flex-end' }}
             >
+              {canShowEsaPanel && (
+                <Button
+                  variant={isEsaPanel ? 'contained' : 'outlined'}
+                  startIcon={<EsaIcon />}
+                  onClick={() => setAliyunPanel(p => (p === 'esa' ? 'dns' : 'esa'))}
+                  sx={{ whiteSpace: 'nowrap' }}
+                >
+                  {isEsaPanel ? 'DNS 域名' : 'ESA 站点管理'}
+                </Button>
+              )}
 	              {showAddZone && (
 	                <Button
 	                  variant="contained"
 	                  startIcon={<AddIcon />}
-	                  onClick={() => setAddZoneOpen(true)}
+	                  onClick={() => {
+	                    if (isEsaPanel) {
+	                      setAddEsaSiteOpen(true);
+	                      return;
+	                    }
+	                    setAddZoneOpen(true);
+	                  }}
 	                  disabled={addZoneCredentials.length === 0}
 	                  sx={{ whiteSpace: 'nowrap' }}
 	                >
-	                  添加域名
+	                  {isEsaPanel ? '添加站点' : '添加域名'}
 	                </Button>
 	              )}
               <Button
@@ -852,12 +1048,12 @@ export default function Dashboard() {
             </Box>
           ) : error ? (
             <Alert severity="error" sx={{ mb: 2, borderRadius: 2 }}>
-              无法加载域名列表: {(error as any)?.message || String(error)}
+              无法加载{listTitle}列表: {(error as any)?.message || String(error)}
             </Alert>
           ) : !isAllScope && !selectedProvider ? (
             <Box sx={{ display: 'flex', flexDirection: 'column', alignItems: 'center', py: 8, color: 'text.secondary' }}>
               <DnsIcon sx={{ fontSize: 48, mb: 2, opacity: 0.3 }} />
-              <Typography variant="body1">请在左侧选择一个 DNS 提供商以查看域名</Typography>
+              <Typography variant="body1">请在左侧选择一个 DNS 提供商以查看{listTitle}</Typography>
             </Box>
           ) : isAllScope && credentials.length === 0 ? (
             <Box sx={{ display: 'flex', flexDirection: 'column', alignItems: 'center', py: 8, color: 'text.secondary' }}>
@@ -868,7 +1064,7 @@ export default function Dashboard() {
             <Box sx={{ display: 'flex', flexDirection: 'column', alignItems: 'center', py: 8, color: 'text.secondary' }}>
                <DnsIcon sx={{ fontSize: 48, mb: 1, opacity: 0.2 }} />
                <Typography variant="body1">
-                 {searchTerm ? '没有找到匹配的域名' : '暂无域名数据'}
+                 {searchTerm ? `没有找到匹配的${listTitle}` : `暂无${listTitle}数据`}
                </Typography>
             </Box>
           ) : (
@@ -941,13 +1137,25 @@ export default function Dashboard() {
         </DialogActions>
       </Dialog>
 
-	      {showAddZone && (
+	      {showAddZone && !isEsaPanel && (
 	        <AddZoneDialog
 	          open={addZoneOpen}
 	          credentials={addZoneCredentials}
 	          initialCredentialId={initialAddCredentialId}
 	          onClose={(refresh) => {
 	            setAddZoneOpen(false);
+	            if (refresh) refetch();
+	          }}
+	        />
+	      )}
+
+	      {isEsaPanel && (
+	        <AddEsaSiteDialog
+	          open={addEsaSiteOpen}
+	          credentials={currentProviderCredentials}
+	          initialCredentialId={initialAddCredentialId}
+	          onClose={(refresh) => {
+	            setAddEsaSiteOpen(false);
 	            if (refresh) refetch();
 	          }}
 	        />

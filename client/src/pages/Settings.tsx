@@ -522,6 +522,7 @@ export default function Settings() {
                   />
 
                   <TextField
+                    fullWidth
                     value={expiryWebhookUrl}
                     onChange={(e) => setExpiryWebhookUrl(e.target.value)}
                     disabled={!expiryNotifyEnabled}
@@ -542,6 +543,7 @@ export default function Settings() {
                   />
 
                   <TextField
+                    fullWidth
                     value={expiryEmailTo}
                     onChange={(e) => setExpiryEmailTo(e.target.value)}
                     disabled={!expiryEmailEnabled}
@@ -553,26 +555,34 @@ export default function Settings() {
 
                   <Divider sx={{ my: 2 }} />
 
-                  <Typography variant="subtitle2" fontWeight={600}>
+                  <Typography variant="subtitle1" fontWeight={600}>
                     SMTP 设置
                   </Typography>
                   <Typography variant="body2" color="text.secondary">
                     留空则使用服务端环境变量 SMTP_*；填写 SMTP 主机后将使用自定义 SMTP。
                   </Typography>
 
-                  <Grid container spacing={2}>
-                    <Grid item xs={12}>
-                      <TextField
-                        value={smtpHost}
-                        onChange={(e) => setSmtpHost(e.target.value)}
-                        label="SMTP 主机"
-                        size="small"
-                        placeholder="smtp.example.com"
-                      />
-                    </Grid>
+                  <Stack spacing={2} sx={{ width: '100%' }}>
+                    <TextField
+                      fullWidth
+                      value={smtpHost}
+                      onChange={(e) => setSmtpHost(e.target.value)}
+                      label="SMTP 主机"
+                      size="small"
+                      placeholder="smtp.example.com"
+                    />
 
-                    <Grid item xs={12} sm={4}>
+                    <Box
+                      sx={{
+                        width: '100%',
+                        display: 'grid',
+                        gridTemplateColumns: { xs: '1fr', sm: '240px 1fr' },
+                        gap: 2,
+                        alignItems: { sm: 'center' },
+                      }}
+                    >
                       <TextField
+                        fullWidth
                         value={smtpPort}
                         onChange={(e) => setSmtpPort(e.target.value)}
                         disabled={!smtpHost.trim()}
@@ -584,9 +594,7 @@ export default function Settings() {
                           inputProps: { min: 1, max: 65535 },
                         }}
                       />
-                    </Grid>
 
-                    <Grid item xs={12} sm={8}>
                       <FormControlLabel
                         control={
                           <Switch
@@ -595,12 +603,21 @@ export default function Settings() {
                             disabled={!smtpHost.trim()}
                           />
                         }
-                        label="使用 SMTPS（secure）"
+                        label="使用 SMTPS"
+                        sx={{ m: 0 }}
                       />
-                    </Grid>
+                    </Box>
 
-                    <Grid item xs={12} sm={6}>
+                    <Box
+                      sx={{
+                        width: '100%',
+                        display: 'grid',
+                        gridTemplateColumns: { xs: '1fr', sm: '1fr 1fr' },
+                        gap: 2,
+                      }}
+                    >
                       <TextField
+                        fullWidth
                         value={smtpUser}
                         onChange={(e) => setSmtpUser(e.target.value)}
                         disabled={!smtpHost.trim()}
@@ -609,10 +626,9 @@ export default function Settings() {
                         placeholder="user@example.com"
                         helperText="如不需要认证，用户名/密码都留空"
                       />
-                    </Grid>
 
-                    <Grid item xs={12} sm={6}>
                       <TextField
+                        fullWidth
                         value={smtpPass}
                         onChange={(e) => setSmtpPass(e.target.value)}
                         disabled={!smtpHost.trim()}
@@ -634,19 +650,18 @@ export default function Settings() {
                           ),
                         }}
                       />
-                    </Grid>
+                    </Box>
 
-                    <Grid item xs={12}>
-                      <TextField
-                        value={smtpFrom}
-                        onChange={(e) => setSmtpFrom(e.target.value)}
-                        disabled={!smtpHost.trim()}
-                        label="From（发件人）"
-                        size="small"
-                        placeholder="DNS Panel <no-reply@example.com>"
-                      />
-                    </Grid>
-                  </Grid>
+                    <TextField
+                      fullWidth
+                      value={smtpFrom}
+                      onChange={(e) => setSmtpFrom(e.target.value)}
+                      disabled={!smtpHost.trim()}
+                      label="From（发件人）"
+                      size="small"
+                      placeholder="DNS Panel <no-reply@example.com>"
+                    />
+                  </Stack>
 
                   <Box>
                     <Button
