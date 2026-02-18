@@ -408,6 +408,12 @@ export default function DnsCredentialManagement() {
   return (
     <Card sx={{ height: '100%', boxShadow: '0 4px 20px rgba(0,0,0,0.05)', border: 'none' }}>
       <CardHeader
+        sx={{
+          '& .MuiCardHeader-action': {
+            alignSelf: 'flex-start',
+            m: 0,
+          },
+        }}
         avatar={<StorageIcon color="primary" />}
         title={<Typography variant="h6" fontWeight="bold">DNS 账户管理</Typography>}
         subheader="管理您的所有 DNS 服务商账户凭证"
@@ -519,18 +525,26 @@ export default function DnsCredentialManagement() {
         onClose={handleCloseDialog}
         maxWidth="md"
         fullWidth
-        fullScreen={isMobile}
         PaperProps={{
           component: 'form',
           onSubmit: handleSubmit(onSubmit),
+          autoComplete: 'off',
+          noValidate: true,
           sx: {
+            borderRadius: 2,
             overflow: 'hidden',
           },
         }}
       >
-        <DialogTitle>{editingCredential ? '编辑账户' : '新增账户'}</DialogTitle>
+        <DialogTitle sx={{ borderBottom: 1, borderColor: 'divider', pb: 2 }}>
+          <Stack direction="row" alignItems="center" spacing={1}>
+            <StorageIcon color="primary" sx={{ fontSize: '1em' }} />
+            <Typography variant="h6" fontWeight="bold">{editingCredential ? '编辑账户' : '新增账户'}</Typography>
+          </Stack>
+        </DialogTitle>
         <DialogContent
           sx={{
+            '&&': { pt: 2 },
             pr: 1.5,
             '&::-webkit-scrollbar-track': {
               margin: '10px 0',
@@ -546,6 +560,7 @@ export default function DnsCredentialManagement() {
               label="账户别名"
               fullWidth
               placeholder="例如：个人域名、公司 DNS"
+              autoComplete="new-password"
               {...register('name', { required: '请输入账户别名' })}
               error={!!errors.name}
               helperText={errors.name?.message}
@@ -598,6 +613,7 @@ export default function DnsCredentialManagement() {
                         fullWidth
                         size="small"
                         placeholder={field.placeholder}
+                        autoComplete="new-password"
                         {...register(`secrets.${field.key}`, {
                           required: editingCredential ? false : (field.required && '此项必填')
                         })}

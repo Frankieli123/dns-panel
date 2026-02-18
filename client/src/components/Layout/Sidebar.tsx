@@ -512,6 +512,10 @@ export default function Sidebar({ onClose }: SidebarProps) {
                       
                                               
                       
+                  WebkitTapHighlightColor: 'transparent',
+                      
+                                              
+                      
                   '&:hover': { 
                       
                                               
@@ -652,6 +656,10 @@ export default function Sidebar({ onClose }: SidebarProps) {
                       
                                               
                       
+                        WebkitTapHighlightColor: 'transparent',
+                      
+                                              
+                      
                         '&:hover': { color: 'white' } 
                       
                                               
@@ -701,6 +709,10 @@ export default function Sidebar({ onClose }: SidebarProps) {
                                               
                       
                         p: 0.2,
+                      
+                                              
+                      
+                        WebkitTapHighlightColor: 'transparent',
                       
                                               
                       
