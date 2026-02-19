@@ -123,6 +123,14 @@ export default function Dashboard() {
 
   const { selectedCredentialId, selectedProvider, credentials, getCredentialsByProvider, selectProvider } = useProvider();
 
+  const allScopeSelectedCredential = useMemo(() => {
+    if (!isAllScope) return null;
+    if (typeof allScopeCredentialId !== 'number') return null;
+    return credentials.find(c => c.id === allScopeCredentialId) || null;
+  }, [isAllScope, allScopeCredentialId, credentials]);
+
+  const isAllScopeAliyunCredential = !!allScopeSelectedCredential && allScopeSelectedCredential.provider === 'aliyun';
+
   useEffect(() => {
     if (!isAllScope) return;
     if (selectedProvider !== null) {
@@ -132,13 +140,15 @@ export default function Dashboard() {
 
   useEffect(() => {
     if (isAllScope) {
-      setAliyunPanel('dns');
+      if (!isAllScopeAliyunCredential) {
+        setAliyunPanel('dns');
+      }
       return;
     }
     if (selectedProvider !== 'aliyun') {
       setAliyunPanel('dns');
     }
-  }, [isAllScope, selectedProvider]);
+  }, [isAllScope, isAllScopeAliyunCredential, selectedProvider]);
 
   useEffect(() => {
     const raw = localStorage.getItem(DOMAINS_PER_PAGE_STORAGE_KEY);
@@ -217,7 +227,7 @@ export default function Dashboard() {
   const addZoneCredentials = isAllScope ? zoneManageCredentials : currentProviderCredentials;
 
   const showAddZone = isAllScope ? true : isZoneManageProvider(selectedProvider);
-  const canShowEsaPanel = !isAllScope && selectedProvider === 'aliyun';
+  const canShowEsaPanel = selectedProvider === 'aliyun' || (isAllScope && isAllScopeAliyunCredential);
   const isEsaPanel = canShowEsaPanel && aliyunPanel === 'esa';
   const listTitle = isEsaPanel ? '站点' : '域名';
   const searchPlaceholder = isEsaPanel ? '搜索站点...' : '搜索域名...';
@@ -243,23 +253,10 @@ export default function Dashboard() {
 
   const { data, isLoading, error, refetch, isRefetching } = useQuery({
     queryKey: isAllScope
-      ? ['domains', 'all', allScopeCredentialId, credentials.map(c => c.id)]
+      ? ['domains', 'all', allScopeCredentialId, isEsaPanel ? 'esa' : 'dns', credentials.map(c => c.id)]
       : ['domains', selectedProvider, selectedCredentialId, isEsaPanel ? 'esa' : 'dns'],
     queryFn: async () => {
       if (isEsaPanel) {
-        if (!selectedProvider || currentProviderCredentials.length === 0) {
-          return { data: { domains: [] } };
-        }
-
-        const safeSelectedCredentialId: number | 'all' =
-          selectedCredentialId === 'all'
-            ? 'all'
-            : typeof selectedCredentialId === 'number' && currentProviderCredentials.some(c => c.id === selectedCredentialId)
-              ? selectedCredentialId
-              : currentProviderCredentials.length === 1
-                ? currentProviderCredentials[0].id
-                : 'all';
-
         const fetchAllSites = async (credId: number) => {
           const pageSize = 100;
           const allSites: any[] = [];
@@ -340,6 +337,28 @@ export default function Dashboard() {
               } as Domain;
             })
             .filter((d): d is Domain => !!d);
+
+        if (isAllScope) {
+          if (!allScopeSelectedCredential || allScopeSelectedCredential.provider !== 'aliyun') {
+            return { data: { domains: [] } };
+          }
+          const sites = await fetchAllSites(allScopeSelectedCredential.id);
+          const domains = toDomains(sites, allScopeSelectedCredential);
+          return { data: { domains } };
+        }
+
+        if (!selectedProvider || currentProviderCredentials.length === 0) {
+          return { data: { domains: [] } };
+        }
+
+        const safeSelectedCredentialId: number | 'all' =
+          selectedCredentialId === 'all'
+            ? 'all'
+            : typeof selectedCredentialId === 'number' && currentProviderCredentials.some(c => c.id === selectedCredentialId)
+              ? selectedCredentialId
+              : currentProviderCredentials.length === 1
+                ? currentProviderCredentials[0].id
+                : 'all';
 
         if (safeSelectedCredentialId === 'all') {
           const results = await Promise.allSettled(
@@ -1701,7 +1720,7 @@ export default function Dashboard() {
 	      {isEsaPanel && (
 	        <AddEsaSiteDialog
 	          open={addEsaSiteOpen}
-	          credentials={currentProviderCredentials}
+	          credentials={isAllScope ? getCredentialsByProvider('aliyun') : currentProviderCredentials}
 	          initialCredentialId={initialAddCredentialId}
 	          onClose={(refresh) => {
 	            setAddEsaSiteOpen(false);
