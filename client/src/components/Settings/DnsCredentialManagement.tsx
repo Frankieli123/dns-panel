@@ -29,6 +29,7 @@ import {
   Delete as DeleteIcon,
   Storage as StorageIcon,
   CheckCircle as CheckCircleIcon,
+  Cancel as CancelIcon,
   Visibility as VisibilityIcon,
   VisibilityOff as VisibilityOffIcon,
   OpenInNew as OpenInNewIcon
@@ -204,7 +205,7 @@ export default function DnsCredentialManagement() {
   const [credentialToDelete, setCredentialToDelete] = useState<DnsCredential | null>(null);
 
   const [verifying, setVerifying] = useState<number | null>(null);
-  const [verifyResult, setVerifyResult] = useState<{ id: number; valid: boolean; message?: string } | null>(null);
+  const [verifyResultById, setVerifyResultById] = useState<Record<number, { valid: boolean; message?: string }>>({});
   const [submitError, setSubmitError] = useState<string | null>(null);
 
   const [secretsPrefillLoading, setSecretsPrefillLoading] = useState(false);
@@ -303,16 +304,13 @@ export default function DnsCredentialManagement() {
   // 验证凭证
   const handleVerify = async (id: number) => {
     setVerifying(id);
-    setVerifyResult(null);
     try {
       const res = await verifyDnsCredential(id);
-      setVerifyResult({
-        id,
-        valid: res.data?.valid || false,
-        message: res.data?.valid ? '凭证有效' : (res.data?.error || '凭证无效')
-      });
+      const valid = !!res.data?.valid;
+      const message = valid ? '凭证有效' : (res.data?.error || '凭证无效');
+      setVerifyResultById(prev => ({ ...prev, [id]: { valid, message } }));
     } catch (error: any) {
-      setVerifyResult({ id, valid: false, message: error.message || '验证失败' });
+      setVerifyResultById(prev => ({ ...prev, [id]: { valid: false, message: error.message || '验证失败' } }));
     } finally {
       setVerifying(null);
     }
@@ -461,15 +459,6 @@ export default function DnsCredentialManagement() {
                         variant="outlined"
                         sx={{ height: 20, fontSize: '0.7rem' }}
                       />
-                      {verifyResult?.id === cred.id && (
-                        <Chip
-                          label={verifyResult.valid ? '有效' : '无效'}
-                          size="small"
-                          color={verifyResult.valid ? 'success' : 'error'}
-                          icon={verifyResult.valid ? <CheckCircleIcon /> : undefined}
-                          sx={{ height: 20, fontSize: '0.7rem' }}
-                        />
-                      )}
                     </Stack>
                     <Typography variant="body2" color="text.secondary">
                       ID: {cred.id} • 创建于 {cred.createdAt.substring(0, 10)}
@@ -483,11 +472,20 @@ export default function DnsCredentialManagement() {
                           size="small"
                           onClick={() => handleVerify(cred.id)}
                           disabled={verifying === cred.id}
+                          color={
+                            verifying === cred.id
+                              ? 'default'
+                              : verifyResultById[cred.id]
+                                ? (verifyResultById[cred.id].valid ? 'success' : 'error')
+                                : 'default'
+                          }
                         >
                           {verifying === cred.id ? (
                             <CircularProgress size={18} />
                           ) : (
-                            <CheckCircleIcon fontSize="small" />
+                            verifyResultById[cred.id]
+                              ? (verifyResultById[cred.id].valid ? <CheckCircleIcon fontSize="small" /> : <CancelIcon fontSize="small" />)
+                              : <CheckCircleIcon fontSize="small" />
                           )}
                         </IconButton>
                       </span>
