@@ -205,7 +205,7 @@ export default function DnsCredentialManagement() {
   const [credentialToDelete, setCredentialToDelete] = useState<DnsCredential | null>(null);
 
   const [verifying, setVerifying] = useState<number | null>(null);
-  const [verifyResultById, setVerifyResultById] = useState<Record<number, { valid: boolean; message?: string }>>({});
+  const [verifyValidById, setVerifyValidById] = useState<Record<number, boolean>>({});
   const [submitError, setSubmitError] = useState<string | null>(null);
 
   const [secretsPrefillLoading, setSecretsPrefillLoading] = useState(false);
@@ -307,10 +307,9 @@ export default function DnsCredentialManagement() {
     try {
       const res = await verifyDnsCredential(id);
       const valid = !!res.data?.valid;
-      const message = valid ? '凭证有效' : (res.data?.error || '凭证无效');
-      setVerifyResultById(prev => ({ ...prev, [id]: { valid, message } }));
+      setVerifyValidById(prev => ({ ...prev, [id]: valid }));
     } catch (error: any) {
-      setVerifyResultById(prev => ({ ...prev, [id]: { valid: false, message: error.message || '验证失败' } }));
+      setVerifyValidById(prev => ({ ...prev, [id]: false }));
     } finally {
       setVerifying(null);
     }
@@ -475,16 +474,16 @@ export default function DnsCredentialManagement() {
                           color={
                             verifying === cred.id
                               ? 'default'
-                              : verifyResultById[cred.id]
-                                ? (verifyResultById[cred.id].valid ? 'success' : 'error')
+                              : typeof verifyValidById[cred.id] === 'boolean'
+                                ? (verifyValidById[cred.id] ? 'success' : 'error')
                                 : 'default'
                           }
                         >
                           {verifying === cred.id ? (
                             <CircularProgress size={18} />
                           ) : (
-                            verifyResultById[cred.id]
-                              ? (verifyResultById[cred.id].valid ? <CheckCircleIcon fontSize="small" /> : <CancelIcon fontSize="small" />)
+                            typeof verifyValidById[cred.id] === 'boolean'
+                              ? (verifyValidById[cred.id] ? <CheckCircleIcon fontSize="small" /> : <CancelIcon fontSize="small" />)
                               : <CheckCircleIcon fontSize="small" />
                           )}
                         </IconButton>
