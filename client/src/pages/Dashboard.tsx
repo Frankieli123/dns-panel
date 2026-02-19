@@ -80,6 +80,7 @@ import AddZoneDialog from '@/components/Dashboard/AddZoneDialog';
 import AddEsaSiteDialog from '@/components/Dashboard/AddEsaSiteDialog';
 import EsaRecordManagement from '@/components/Dashboard/EsaRecordManagement';
 import { useProvider } from '@/contexts/ProviderContext';
+import { getProviderIcon } from '@/components/Settings/ProviderSelector';
 
 const DOMAINS_PER_PAGE_STORAGE_KEY = 'dns_domains_per_page';
 const DOMAINS_PER_PAGE_CHANGED_EVENT = 'dns_domains_per_page_changed';
@@ -941,7 +942,8 @@ export default function Dashboard() {
           ? `/domain/${domain.id}?credentialId=${domain.credentialId}`
           : `/domain/${domain.id}`;
         
-        const providerConfig = domain.provider ? PROVIDER_CONFIG[domain.provider] : null;
+        const providerType = getDomainProvider(domain);
+        const providerConfig = providerType ? PROVIDER_CONFIG[providerType] : null;
         const esaAccessTypeLabel = isEsaPanel ? getEsaAccessTypeLabel(domain.accessType) : null;
         const esaCoverageLabel = isEsaPanel ? getEsaCoverageLabel(domain.coverage) : null;
         const esaSubscriptionLabel = isEsaPanel ? getEsaSubscriptionTypeLabel(domain) : null;
@@ -990,18 +992,16 @@ export default function Dashboard() {
                         <Chip
                           size="small"
                           icon={
-                             providerConfig
-                             ? <Box component="span" sx={{ display: 'flex', fontSize: 16 }}>{providerConfig.icon}</Box>
-                             : <BusinessIcon style={{ fontSize: 14 }} />
+                            providerType
+                              ? getProviderIcon(providerType, 'small')
+                              : <BusinessIcon fontSize="small" />
                           }
                           label={getDomainCredentialName(domain)}
-                          variant="outlined"
                           sx={{ 
                             fontSize: '0.75rem', 
                             height: 24, 
-                            borderRadius: 1,
+                            border: 'none',
                             ...(providerConfig ? {
-                              borderColor: alpha(providerConfig.color, 0.3),
                               bgcolor: alpha(providerConfig.color, 0.08),
                               color: providerConfig.color,
                               '& .MuiChip-icon': { color: 'inherit' }
@@ -1146,7 +1146,8 @@ export default function Dashboard() {
               ? `/domain/${domain.id}?credentialId=${domain.credentialId}`
               : `/domain/${domain.id}`;
 
-            const providerConfig = domain.provider ? PROVIDER_CONFIG[domain.provider] : null;
+            const providerType = getDomainProvider(domain);
+            const providerConfig = providerType ? PROVIDER_CONFIG[providerType] : null;
             const esaAccessTypeLabel = isEsaPanel ? getEsaAccessTypeLabel(domain.accessType) : null;
             const esaCoverageLabel = isEsaPanel ? getEsaCoverageLabel(domain.coverage) : null;
             const esaSubscriptionLabel = isEsaPanel ? getEsaSubscriptionTypeLabel(domain) : null;
@@ -1201,18 +1202,16 @@ export default function Dashboard() {
                       <Chip
                         size="small"
                         icon={
-                           providerConfig
-                           ? <Box component="span" sx={{ display: 'flex', fontSize: 16 }}>{providerConfig.icon}</Box>
-                           : <BusinessIcon style={{ fontSize: 14 }} />
+                          providerType
+                            ? getProviderIcon(providerType, 'small')
+                            : <BusinessIcon fontSize="small" />
                         }
                         label={getDomainCredentialName(domain)}
-                        variant="outlined"
                         sx={{ 
                           fontSize: '0.75rem', 
                           height: 24, 
-                          borderRadius: 1,
+                          border: 'none',
                           ...(providerConfig ? {
-                            borderColor: alpha(providerConfig.color, 0.3),
                             bgcolor: alpha(providerConfig.color, 0.08),
                             color: providerConfig.color,
                             '& .MuiChip-icon': { color: 'inherit' }
