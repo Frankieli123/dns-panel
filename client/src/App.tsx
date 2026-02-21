@@ -7,6 +7,7 @@ import Register from './pages/Register';
 import Dashboard from './pages/Dashboard';
 import DomainDetail from './pages/DomainDetail';
 import CustomHostnames from './pages/CustomHostnames';
+import Tunnels from './pages/Tunnels';
 import Logs from './pages/Logs';
 import Settings from './pages/Settings';
 
@@ -48,6 +49,7 @@ function App() {
         <Route index element={<Dashboard />} />
         <Route path="domain/:zoneId" element={<DomainDetail />} />
         <Route path="hostnames/:zoneId" element={<CustomHostnames />} />
+        <Route path="tunnels/:zoneId" element={<Tunnels />} />
         <Route path="logs" element={<Logs />} />
         <Route path="settings" element={<Settings />} />
       </Route>
