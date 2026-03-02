@@ -257,7 +257,7 @@ export default function TokenManagement() {
                     required: editingCredential ? false : '请输入 API Token'
                   })}
                   error={!!errors.apiToken}
-                  helperText={errors.apiToken?.message || "请确保 Token 拥有 Zone.Read 和 DNS.Edit 权限"}
+                  helperText={errors.apiToken?.message || "请确保 Token 拥有 区域（Zone）读取 和 区域.DNS（编辑） 权限"}
                 />
 
                 {verifyResult && (

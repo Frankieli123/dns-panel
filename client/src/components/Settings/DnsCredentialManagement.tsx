@@ -53,12 +53,15 @@ const PROVIDER_CREDENTIAL_GUIDE: Record<ProviderType, { title: string; steps: st
   cloudflare: {
     title: 'Cloudflare API Token 获取方式',
     steps: [
-      '登录 Cloudflare Dashboard',
-      '右上角头像 → My Profile → API Tokens',
-      'Create Token → Create Custom Token',
-      '权限（Permissions）添加：区域 → 区域 → 编辑；区域 → DNS → 编辑',
-      '区域资源（Zone Resources）：包含 → 账户的所有区域 → 选择你的账户',
-      '创建并复制 Token（若账号下还没有任何域名，建议额外加：Account → Read）'
+      '登录 Cloudflare 控制台',
+      '进入「API 令牌」页面：管理账户 → 账户 API 令牌（或：右上角头像 → 我的个人资料 → API 令牌）',
+      '创建令牌 → 创建自定义令牌',
+      '权限（Permissions）添加：区域.DNS（编辑）',
+      '如需使用「自定义主机名」，权限额外添加：区域.SSL 和证书（编辑）',
+      '如需使用「Tunnels」，权限额外添加：账户.Cloudflare Tunnel（编辑）（仅查看可用 读取）',
+      '资源（Resources）选择：包含 → 所有区域（或选择需要管理的区域）',
+      '建议额外添加：区域（Zone）读取，用于读取域名列表/校验凭证',
+      '创建并复制 Token'
     ],
     link: 'https://dash.cloudflare.com/profile/api-tokens'
   },

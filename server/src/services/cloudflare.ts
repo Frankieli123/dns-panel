@@ -17,16 +17,117 @@ type CfAccount = {
 export class CloudflareService {
   private client: Cloudflare;
   private readonly cachePrefix: string;
+  private readonly apiToken: string;
 
   constructor(apiToken: string) {
     // 清理 Token 中可能的空白字符
     const cleanToken = apiToken.trim().replace(/[\r\n\s]/g, '');
     this.client = new Cloudflare({ apiToken: cleanToken });
+    this.apiToken = cleanToken;
     this.cachePrefix = crypto.createHash('sha1').update(cleanToken).digest('hex').slice(0, 12);
   }
 
   private key(key: string): string {
     return `cf:${this.cachePrefix}:${key}`;
+  }
+
+  private buildTunnelError(action: string, error: any): never {
+    const status = typeof error?.status === 'number'
+      ? error.status
+      : (typeof error?.statusCode === 'number' ? error.statusCode : undefined);
+
+    const cfErrors = Array.isArray(error?.errors)
+      ? error.errors
+      : (Array.isArray(error?.error?.errors) ? error.error.errors : []);
+
+    const cfFirstMessage = cfErrors[0]?.message;
+    const hasAuthError = cfErrors.some((e: any) =>
+      e?.code === 10000 || /Authentication error/i.test(String(e?.message || ''))
+    ) || /Authentication error/i.test(String(error?.message || ''));
+
+    if (status === 401) {
+      const err = new Error(`Cloudflare Token 无效或已过期，无法${action}。`);
+      (err as any).status = status;
+      throw err;
+    }
+
+    if (status === 403 && hasAuthError) {
+      const err = new Error(
+        `Cloudflare 权限不足，无法${action}。请在 Token 权限中添加：账户.Cloudflare Tunnel（读取/编辑）。`
+      );
+      (err as any).status = status;
+      throw err;
+    }
+
+    if (status === 429) {
+      const err = new Error(`Cloudflare API 请求过于频繁（触发限流），无法${action}。请稍后重试。`);
+      (err as any).status = status;
+      throw err;
+    }
+
+    if (typeof status === 'number' && status >= 500) {
+      const err = new Error(`Cloudflare 服务暂时不可用，无法${action}。请稍后重试。`);
+      (err as any).status = status;
+      throw err;
+    }
+
+    const msg = `${action}失败: ${typeof cfFirstMessage === 'string' && cfFirstMessage.trim()
+      ? cfFirstMessage
+      : (error?.message || String(error))}`;
+    const err = new Error(msg);
+    (err as any).status = status;
+    throw err;
+  }
+
+  private async requestTunnelRaw(
+    action: string,
+    method: 'GET' | 'POST' | 'DELETE',
+    path: string,
+    opts?: {
+      query?: Record<string, string | number | boolean | undefined>;
+      body?: any;
+    }
+  ): Promise<any> {
+    const base = 'https://api.cloudflare.com/client/v4';
+    const url = new URL(`${base}${path}`);
+
+    const query = opts?.query || {};
+    Object.entries(query).forEach(([k, v]) => {
+      if (v === undefined || v === null || v === '') return;
+      url.searchParams.set(k, String(v));
+    });
+
+    let response: Response;
+    try {
+      response = await fetch(url.toString(), {
+        method,
+        headers: {
+          Authorization: `Bearer ${this.apiToken}`,
+          'Content-Type': 'application/json',
+        },
+        body: opts?.body ? JSON.stringify(opts.body) : undefined,
+      });
+    } catch (error: any) {
+      const err = new Error(error?.message || String(error) || '网络请求失败');
+      (err as any).status = 503;
+      throw err;
+    }
+
+    let payload: any = null;
+    try {
+      payload = await response.json();
+    } catch {}
+
+    if (!response.ok || payload?.success === false) {
+      const err = new Error(
+        payload?.errors?.[0]?.message || payload?.messages?.[0]?.message || payload?.message || response.statusText || '未知错误'
+      );
+      (err as any).status = response.status;
+      (err as any).errors = Array.isArray(payload?.errors) ? payload.errors : [];
+      throw err;
+    }
+
+    return payload?.result ?? payload;
   }
 
   /**
@@ -154,6 +255,10 @@ export class CloudflareService {
         message = '获取域名列表失败: Cloudflare Token 无效或已过期';
       } else if (status === 403) {
         message = '获取域名列表失败: 权限不足，需要 Zone:Read 权限';
+      } else if (status === 429) {
+        message = '获取域名列表失败: Cloudflare API 请求过于频繁（触发限流），请稍后重试';
+      } else if (typeof status === 'number' && status >= 500) {
+        message = '获取域名列表失败: Cloudflare 服务异常，请稍后重试';
       }
       const err = new Error(message);
       (err as any).status = status;
@@ -489,6 +594,417 @@ export class CloudflareService {
     } catch (error: any) {
       const err = new Error(`更新回退源失败: ${error.message}`);
       (err as any).status = error?.status || error?.statusCode;
+      throw err;
+    }
+  }
+
+  /**
+   * 获取 Tunnel 列表（Account 级别）
+   */
+  async getTunnels(accountId: string): Promise<any[]> {
+    try {
+      const perPage = 50;
+      let page = 1;
+      let totalPages = 1;
+      const all: any[] = [];
+
+      while (page <= totalPages && page <= 200) {
+        const response = await (this.client as any).zeroTrust.tunnels.list({
+          account_id: accountId,
+          page,
+          per_page: perPage,
+        });
+
+        const batch = (response as any)?.result || [];
+        all.push(...batch);
+
+        const info = (response as any)?.result_info;
+        const nextTotalPages = typeof info?.total_pages === 'number' ? info.total_pages : undefined;
+        if (typeof nextTotalPages === 'number' && nextTotalPages > 0) {
+          totalPages = nextTotalPages;
+        } else if (batch.length < perPage) {
+          break;
+        }
+
+        if (batch.length === 0) break;
+        page += 1;
+      }
+
+      return all;
+    } catch (error: any) {
+      this.buildTunnelError('获取 Tunnel 列表', error);
+    }
+  }
+
+  /**
+   * 创建 Tunnel（Account 级别）
+   */
+  async createTunnel(accountId: string, name: string): Promise<any> {
+    try {
+      const tunnelSecret = crypto.randomBytes(32).toString('base64');
+      const result = await (this.client as any).zeroTrust.tunnels.create({
+        account_id: accountId,
+        name,
+        tunnel_secret: tunnelSecret,
+      });
+      return result;
+    } catch (error: any) {
+      this.buildTunnelError('创建 Tunnel', error);
+    }
+  }
+
+  /**
+   * 删除 Tunnel（Account 级别）
+   */
+  async deleteTunnel(accountId: string, tunnelId: string): Promise<any> {
+    try {
+      const result = await (this.client as any).zeroTrust.tunnels.delete(tunnelId, {
+        account_id: accountId,
+      });
+      return result;
+    } catch (error: any) {
+      this.buildTunnelError('删除 Tunnel', error);
+    }
+  }
+
+  /**
+   * 获取 Tunnel Token（用于 cloudflared 绑定）
+   */
+  async getTunnelToken(accountId: string, tunnelId: string): Promise<string> {
+    try {
+      const result = await (this.client as any).zeroTrust.tunnels.token.get(tunnelId, {
+        account_id: accountId,
+      });
+
+      if (typeof result === 'string') return result;
+      return JSON.stringify(result);
+    } catch (error: any) {
+      this.buildTunnelError('获取 Tunnel Token', error);
+    }
+  }
+
+  /**
+   * 获取 Tunnel 配置（ingress/public hostnames）
+   */
+  async getTunnelConfig(accountId: string, tunnelId: string): Promise<any> {
+    try {
+      const result = await (this.client as any).zeroTrust.tunnels.configurations.get(tunnelId, {
+        account_id: accountId,
+      });
+      return result;
+    } catch (error: any) {
+      this.buildTunnelError('获取 Tunnel 配置', error);
+    }
+  }
+
+  /**
+   * 更新 Tunnel 配置（ingress/public hostnames）
+   */
+  async updateTunnelConfig(accountId: string, tunnelId: string, config: any): Promise<any> {
+    try {
+      const result = await (this.client as any).zeroTrust.tunnels.configurations.update(tunnelId, {
+        account_id: accountId,
+        config,
+      });
+      return result;
+    } catch (error: any) {
+      this.buildTunnelError('更新 Tunnel 配置', error);
+    }
+  }
+
+  /**
+   * 获取 Tunnel 对应的 CIDR 路由列表（private network routes）
+   */
+  async listCidrRoutes(accountId: string, tunnelId?: string): Promise<any[]> {
+    try {
+      const perPage = 100;
+      let page = 1;
+      let totalPages = 1;
+      const all: any[] = [];
+
+      while (page <= totalPages && page <= 200) {
+        const response = await (this.client as any).zeroTrust.networks.routes.list({
+          account_id: accountId,
+          tunnel_id: tunnelId,
+          is_deleted: false,
+          page,
+          per_page: perPage,
+        });
+
+        const batch = (response as any)?.result || (Array.isArray(response) ? response : []);
+        all.push(...batch);
+
+        const info = (response as any)?.result_info;
+        const nextTotalPages = typeof info?.total_pages === 'number' ? info.total_pages : undefined;
+        if (typeof nextTotalPages === 'number' && nextTotalPages > 0) {
+          totalPages = nextTotalPages;
+        } else if (batch.length < perPage) {
+          break;
+        }
+
+        if (batch.length === 0) break;
+        page += 1;
+      }
+
+      return all;
+    } catch (error: any) {
+      this.buildTunnelError('获取 CIDR 路由列表', error);
+    }
+  }
+
+  /**
+   * 创建 Tunnel CIDR 路由
+   */
+  async createCidrRoute(
+    accountId: string,
+    params: { network: string; tunnelId: string; comment?: string; virtualNetworkId?: string }
+  ): Promise<any> {
+    try {
+      const result = await (this.client as any).zeroTrust.networks.routes.create({
+        account_id: accountId,
+        network: params.network,
+        tunnel_id: params.tunnelId,
+        comment: params.comment,
+        virtual_network_id: params.virtualNetworkId,
+      });
+      return result;
+    } catch (error: any) {
+      this.buildTunnelError('创建 CIDR 路由', error);
+    }
+  }
+
+  /**
+   * 删除 Tunnel CIDR 路由
+   */
+  async deleteCidrRoute(accountId: string, routeId: string): Promise<any> {
+    try {
+      const result = await (this.client as any).zeroTrust.networks.routes.delete(routeId, {
+        account_id: accountId,
+      });
+      return result;
+    } catch (error: any) {
+      this.buildTunnelError('删除 CIDR 路由', error);
+    }
+  }
+
+  /**
+   * 获取 Tunnel 对应的主机名路由列表（private hostname routes）
+   */
+  async listHostnameRoutes(accountId: string, tunnelId?: string): Promise<any[]> {
+    try {
+      const perPage = 100;
+      let page = 1;
+      let totalPages = 1;
+      const all: any[] = [];
+
+      while (page <= totalPages && page <= 200) {
+        const result = await this.requestTunnelRaw(
+          '获取主机名路由列表',
+          'GET',
+          `/accounts/${accountId}/zerotrust/routes/hostname`,
+          { query: { tunnel_id: tunnelId, page, per_page: perPage } }
+        );
+
+        const batch = Array.isArray(result)
+          ? result
+          : (Array.isArray(result?.result) ? result.result : []);
+        all.push(...batch);
+
+        const info = (result as any)?.result_info;
+        const nextTotalPages = typeof info?.total_pages === 'number' ? info.total_pages : undefined;
+        if (typeof nextTotalPages === 'number' && nextTotalPages > 0) {
+          totalPages = nextTotalPages;
+        } else if (batch.length < perPage) {
+          break;
+        }
+
+        if (batch.length === 0) break;
+        page += 1;
+      }
+
+      if (!tunnelId) return all;
+      return all.filter((r: any) => String(r?.tunnel_id || '').trim() === tunnelId);
+    } catch (error: any) {
+      this.buildTunnelError('获取主机名路由列表', error);
+    }
+  }
+
+  /**
+   * 创建 Tunnel 主机名路由
+   */
+  async createHostnameRoute(
+    accountId: string,
+    params: { hostname: string; tunnelId: string; comment?: string }
+  ): Promise<any> {
+    try {
+      const result = await this.requestTunnelRaw(
+        '创建主机名路由',
+        'POST',
+        `/accounts/${accountId}/zerotrust/routes/hostname`,
+        {
+          body: {
+            hostname: params.hostname,
+            tunnel_id: params.tunnelId,
+            comment: params.comment,
+          },
+        }
+      );
+      return result;
+    } catch (error: any) {
+      this.buildTunnelError('创建主机名路由', error);
+    }
+  }
+
+  /**
+   * 删除 Tunnel 主机名路由
+   */
+  async deleteHostnameRoute(accountId: string, routeId: string): Promise<any> {
+    try {
+      const result = await this.requestTunnelRaw(
+        '删除主机名路由',
+        'DELETE',
+        `/accounts/${accountId}/zerotrust/routes/hostname/${routeId}`
+      );
+      return result;
+    } catch (error: any) {
+      this.buildTunnelError('删除主机名路由', error);
+    }
+  }
+
+  private normalizeHostname(input: unknown): string {
+    return String(input ?? '').trim().replace(/\.+$/, '').toLowerCase();
+  }
+
+  /**
+   * 创建/更新 Tunnel 对应的 CNAME 记录（指向 <tunnelId>.cfargotunnel.com）
+   * 说明：Cloudflare Tunnel 的 public hostname 需要 proxied CNAME 记录。
+   */
+  async upsertTunnelCnameRecord(zoneId: string, hostname: string, tunnelId: string): Promise<{ action: 'created' | 'updated' | 'unchanged' }> {
+    const zone = String(zoneId || '').trim();
+    const name = this.normalizeHostname(hostname);
+    const tid = String(tunnelId || '').trim();
+    if (!zone) throw new Error('缺少 Zone ID');
+    if (!name) throw new Error('缺少主机名');
+    if (!tid) throw new Error('缺少 Tunnel ID');
+
+    const target = `${tid}.cfargotunnel.com`;
+    const normalizeTarget = (v: any) => String(v ?? '').trim().toLowerCase().replace(/\.$/, '');
+    const targetNorm = normalizeTarget(target);
+
+    try {
+      const listResp = await (this.client.dns.records as any).list({
+        zone_id: zone,
+        name,
+        per_page: 100,
+      } as any);
+
+      const records: any[] = (listResp as any)?.result || [];
+      const matches = records.filter(r => this.normalizeHostname(r?.name) === name);
+      const cnames = matches.filter(r => String(r?.type || '').toUpperCase() === 'CNAME');
+      const others = matches.filter(r => String(r?.type || '').toUpperCase() !== 'CNAME');
+
+      if (others.length > 0) {
+        const types = [...new Set(others.map(r => String(r?.type || '').toUpperCase()).filter(Boolean))].join(', ') || '未知类型';
+        const err = new Error(`配置 DNS 记录失败: 主机名已存在非 CNAME 记录（${types}），无法创建 Tunnel CNAME，请先删除/改名`);
+        (err as any).status = 400;
+        throw err;
+      }
+
+      const existing = cnames[0];
+
+      if (existing) {
+        const existingContent = normalizeTarget(existing?.content);
+        const existingProxied = existing?.proxied === true;
+        const needsUpdate = existingContent !== targetNorm || !existingProxied;
+
+        if (!needsUpdate) return { action: 'unchanged' };
+
+        await (this.client.dns.records as any).update(existing.id, {
+          zone_id: zone,
+          type: 'CNAME',
+          name,
+          content: target,
+          proxied: true,
+          ttl: 1,
+        } as any);
+
+        cache.del(this.key(`dns_records_${zone}`));
+        return { action: 'updated' };
+      }
+
+      await (this.client.dns.records as any).create({
+        zone_id: zone,
+        type: 'CNAME',
+        name,
+        content: target,
+        proxied: true,
+        ttl: 1,
+      } as any);
+
+      cache.del(this.key(`dns_records_${zone}`));
+      return { action: 'created' };
+    } catch (error: any) {
+      const status = error?.status || error?.statusCode;
+      let message = `配置 DNS 记录失败: ${error?.message || String(error)}`;
+      if (status === 401) {
+        message = '配置 DNS 记录失败: Cloudflare Token 无效或已过期';
+      } else if (status === 403) {
+        message = '配置 DNS 记录失败: 权限不足，请在 Token 权限中添加 区域.DNS（编辑）';
+      } else if (status === 429) {
+        message = '配置 DNS 记录失败: Cloudflare API 请求过于频繁（触发限流），请稍后重试';
+      } else if (typeof status === 'number' && status >= 500) {
+        message = '配置 DNS 记录失败: Cloudflare 服务异常，请稍后重试';
+      }
+      const err = new Error(message);
+      (err as any).status = status;
+      throw err;
+    }
+  }
+
+  /**
+   * 删除 Tunnel CNAME 记录（仅当记录指向 <tunnelId>.cfargotunnel.com 时）
+   */
+  async deleteTunnelCnameRecordIfMatch(zoneId: string, hostname: string, tunnelId: string): Promise<{ deleted: boolean }> {
+    const zone = String(zoneId || '').trim();
+    const name = this.normalizeHostname(hostname);
+    const tid = String(tunnelId || '').trim();
+    if (!zone) throw new Error('缺少 Zone ID');
+    if (!name) throw new Error('缺少主机名');
+    if (!tid) throw new Error('缺少 Tunnel ID');
+
+    const target = `${tid}.cfargotunnel.com`.toLowerCase();
+
+    try {
+      const listResp = await (this.client.dns.records as any).list({
+        zone_id: zone,
+        type: 'CNAME',
+        name,
+        per_page: 100,
+      } as any);
+
+      const records: any[] = (listResp as any)?.result || [];
+      const normalizeTarget = (v: any) => String(v ?? '').trim().toLowerCase().replace(/\.$/, '');
+      const candidates = records.filter(r => this.normalizeHostname(r?.name) === name);
+      const toDelete = candidates.find(r => normalizeTarget(r?.content) === target);
+      if (!toDelete?.id) return { deleted: false };
+
+      await (this.client.dns.records as any).delete(toDelete.id, { zone_id: zone } as any);
+      cache.del(this.key(`dns_records_${zone}`));
+      return { deleted: true };
+    } catch (error: any) {
+      const status = error?.status || error?.statusCode;
+      let message = `删除 DNS 记录失败: ${error?.message || String(error)}`;
+      if (status === 401) {
+        message = '删除 DNS 记录失败: Cloudflare Token 无效或已过期';
+      } else if (status === 403) {
+        message = '删除 DNS 记录失败: 权限不足，请在 Token 权限中添加 区域.DNS（编辑）';
+      } else if (status === 429) {
+        message = '删除 DNS 记录失败: Cloudflare API 请求过于频繁（触发限流），请稍后重试';
+      } else if (typeof status === 'number' && status >= 500) {
+        message = '删除 DNS 记录失败: Cloudflare 服务异常，请稍后重试';
+      }
+      const err = new Error(message);
+      (err as any).status = status;
       throw err;
     }
   }

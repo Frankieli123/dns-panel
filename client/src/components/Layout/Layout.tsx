@@ -24,6 +24,7 @@ const drawerWidth = 260;
 const breadcrumbNameMap: Record<string, string> = {
   logs: '操作日志',
   settings: '设置',
+  tunnels: 'Tunnels',
 };
 
 export default function Layout() {
@@ -134,6 +135,14 @@ export default function Layout() {
       crumbs.push(
         <Typography color="text.primary" key="hostnames" sx={{ fontWeight: 700 }}>
           主机名管理
+        </Typography>
+      );
+    } else if (pathParts[0] === 'tunnels') {
+      // /tunnels
+      // /tunnels/:zoneId (legacy) - Tunnel 是账户级功能，不按域名区分
+      crumbs.push(
+        <Typography color="text.primary" key="tunnels" sx={{ fontWeight: 700 }}>
+          Tunnels
         </Typography>
       );
     } else {

@@ -1,6 +1,5 @@
 import { useState, useEffect, useRef } from 'react';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
-import { useNavigate } from 'react-router-dom';
 import {
   Box,
   Typography,
@@ -39,14 +38,12 @@ interface DnsManagementProps {
 export default function DnsManagement({ zoneId, credentialId }: DnsManagementProps) {
   const [activeTab, setActiveTab] = useState(0);
   const { selectedProvider, credentials, getProviderCapabilities } = useProvider();
-  const navigate = useNavigate();
 
   const credentialProvider = (typeof credentialId === 'number'
     ? credentials.find(c => c.id === credentialId)?.provider
     : selectedProvider) ?? undefined;
   const capabilities = getProviderCapabilities(credentialProvider);
   const supportsCustomHostnames = credentialProvider === 'cloudflare';
-  const supportsTunnels = credentialProvider === 'cloudflare';
   const supportsLine = capabilities?.supportsLine ?? false;
   const supportsStatus = capabilities?.supportsStatus ?? false;
   const customHostnameListRef = useRef<CustomHostnameListRef>(null);
@@ -136,10 +133,7 @@ export default function DnsManagement({ zoneId, credentialId }: DnsManagementPro
     if (!supportsCustomHostnames && activeTab === 1) {
       setActiveTab(0);
     }
-    if (!supportsTunnels && activeTab === 2) {
-      setActiveTab(0);
-    }
-  }, [supportsCustomHostnames, supportsTunnels, activeTab]);
+  }, [supportsCustomHostnames, activeTab]);
 
   const handleTabChange = (_event: React.SyntheticEvent, newValue: number) => {
     setActiveTab(newValue);
@@ -162,7 +156,6 @@ export default function DnsManagement({ zoneId, credentialId }: DnsManagementPro
         <Tabs value={activeTab} onChange={handleTabChange} sx={{ borderBottom: 0, minHeight: { xs: 40, sm: 48 } }}>
           <Tab label="DNS 记录" sx={{ minHeight: { xs: 40, sm: 48 }, py: 1 }} />
           {supportsCustomHostnames && <Tab label="自定义主机名" sx={{ minHeight: { xs: 40, sm: 48 }, py: 1 }} />}
-          {supportsTunnels && <Tab label="Tunnel" sx={{ minHeight: { xs: 40, sm: 48 }, py: 1 }} />}
         </Tabs>
         
         <Box sx={{ mb: 1, mr: { xs: 0, sm: 1 }, flexShrink: 0 }}>
@@ -286,22 +279,6 @@ export default function DnsManagement({ zoneId, credentialId }: DnsManagementPro
       )}
       {supportsCustomHostnames && activeTab === 1 && (
         <CustomHostnameList ref={customHostnameListRef} zoneId={zoneId} credentialId={credentialId} />
-      )}
-      {supportsTunnels && activeTab === 2 && (
-        <Box sx={{ p: 4, textAlign: 'center' }}>
-          <Typography variant="body1" color="text.secondary" sx={{ mb: 2 }}>
-            此处提供 Cloudflare Tunnel 的快捷管理入口。
-          </Typography>
-          <Button
-            variant="contained"
-            color="primary"
-            onClick={() => {
-              navigate(credentialId ? `/tunnels/${zoneId}?credentialId=${credentialId}` : `/tunnels/${zoneId}`);
-            }}
-          >
-            前往 Tunnel 管理
-          </Button>
-        </Box>
       )}
     </Box>
   );

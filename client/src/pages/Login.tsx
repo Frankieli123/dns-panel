@@ -299,6 +299,34 @@ export default function Login() {
               )}
 
               <form onSubmit={handleSubmit2FA(on2FASubmit)} autoComplete="off">
+                <input
+                  type="text"
+                  name="username"
+                  autoComplete="username"
+                  tabIndex={-1}
+                  aria-hidden="true"
+                  style={{
+                    position: 'absolute',
+                    left: '-9999px',
+                    width: 1,
+                    height: 1,
+                    opacity: 0,
+                  }}
+                />
+                <input
+                  type="password"
+                  name="password"
+                  autoComplete="current-password"
+                  tabIndex={-1}
+                  aria-hidden="true"
+                  style={{
+                    position: 'absolute',
+                    left: '-9999px',
+                    width: 1,
+                    height: 1,
+                    opacity: 0,
+                  }}
+                />
                 <Stack spacing={2.5}>
                   <TextField
                     fullWidth
@@ -326,6 +354,9 @@ export default function Login() {
                       inputMode: 'numeric',
                       pattern: '[0-9]*',
                       maxLength: 6,
+                      autoComplete: 'one-time-code',
+                      'data-lpignore': 'true',
+                      'data-1p-ignore': 'true',
                       style: { textAlign: 'center' }
                     }}
                     autoFocus

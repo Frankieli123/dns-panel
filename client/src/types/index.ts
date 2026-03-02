@@ -101,7 +101,7 @@ export interface Log {
   id: number;
   timestamp: string;
   action: 'CREATE' | 'UPDATE' | 'DELETE';
-  resourceType: 'DNS' | 'ZONE' | 'HOSTNAME' | 'USER' | 'CREDENTIAL';
+  resourceType: 'DNS' | 'ZONE' | 'HOSTNAME' | 'TUNNEL' | 'USER' | 'CREDENTIAL';
   domain?: string;
   recordName?: string;
   recordType?: string;
@@ -135,6 +135,53 @@ export interface CustomHostname {
     value: string;
   };
   created_at: string;
+}
+
+/**
+ * Cloudflare Tunnel
+ */
+export interface Tunnel {
+  id: string;
+  name?: string;
+  status?: 'inactive' | 'degraded' | 'healthy' | 'down';
+  created_at?: string;
+  deleted_at?: string;
+  connections?: Array<{
+    colo_name?: string;
+    is_pending_reconnect?: boolean;
+    uuid?: string;
+    client_id?: string;
+    client_version?: string;
+    opened_at?: string;
+    origin_ip?: string;
+  }>;
+  conns_active_at?: string;
+  conns_inactive_at?: string;
+  remote_config?: boolean;
+  tun_type?: string;
+}
+
+export interface TunnelPublicHostnameRoute {
+  hostname: string;
+  service: string;
+  path?: string;
+}
+
+export interface TunnelCidrRoute {
+  id: string;
+  network: string;
+  comment?: string;
+  tunnelId?: string;
+  virtualNetworkId?: string;
+  createdAt?: string;
+}
+
+export interface TunnelHostnameRoute {
+  id: string;
+  hostname: string;
+  comment?: string;
+  tunnelId?: string;
+  createdAt?: string;
 }
 
 /**

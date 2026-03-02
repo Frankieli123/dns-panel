@@ -232,6 +232,17 @@ export default function Dashboard() {
   const isEsaPanel = canShowEsaPanel && aliyunPanel === 'esa';
   const listTitle = isEsaPanel ? '站点' : '域名';
   const searchPlaceholder = isEsaPanel ? '搜索站点...' : '搜索域名...';
+  const tunnelsCredentialId = useMemo(() => {
+    if (isAllScope) {
+      return typeof allScopeCredentialId === 'number' && allScopeSelectedCredential?.provider === 'cloudflare'
+        ? allScopeCredentialId
+        : null;
+    }
+
+    return selectedProvider === 'cloudflare' && typeof selectedCredentialId === 'number'
+      ? selectedCredentialId
+      : null;
+  }, [isAllScope, allScopeCredentialId, allScopeSelectedCredential, selectedProvider, selectedCredentialId]);
   const initialAddCredentialId = useMemo(() => {
     if (!showAddZone) return undefined;
     if (isAllScope) {
@@ -1420,11 +1431,21 @@ export default function Dashboard() {
                   {isEsaPanel ? 'DNS 域名' : 'ESA 站点管理'}
                 </Button>
               )}
-	              {showAddZone && (
-	                <Button
-	                  variant="contained"
-	                  startIcon={<AddIcon />}
-	                  onClick={() => {
+                {!isEsaPanel && typeof tunnelsCredentialId === 'number' && (
+                  <Button
+                    variant="outlined"
+                    startIcon={<CloudflareIcon />}
+                    onClick={() => navigate(`/tunnels?credentialId=${tunnelsCredentialId}`)}
+                    sx={{ whiteSpace: 'nowrap' }}
+                  >
+                    Tunnels
+                  </Button>
+                )}
+		              {showAddZone && (
+		                <Button
+		                  variant="contained"
+		                  startIcon={<AddIcon />}
+		                  onClick={() => {
 	                    if (isEsaPanel) {
 	                      setAddEsaSiteOpen(true);
 	                      return;
@@ -1432,15 +1453,15 @@ export default function Dashboard() {
 	                    setAddZoneOpen(true);
 	                  }}
 	                  disabled={addZoneCredentials.length === 0}
-	                  sx={{ whiteSpace: 'nowrap' }}
-	                >
-	                  {isEsaPanel ? '添加站点' : '添加域名'}
-	                </Button>
-	              )}
-              <Button
-                variant="outlined"
-                startIcon={<RefreshIcon />}
-                onClick={handleRefresh}
+		                  sx={{ whiteSpace: 'nowrap' }}
+		                >
+		                  {isEsaPanel ? '添加站点' : '添加域名'}
+		                </Button>
+		              )}
+	              <Button
+	                variant="outlined"
+	                startIcon={<RefreshIcon />}
+	                onClick={handleRefresh}
                 disabled={isRefetching || (!isAllScope && !selectedProvider) || (isAllScope && credentials.length === 0)}
                 sx={{
                   borderColor: 'divider',

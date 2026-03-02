@@ -37,6 +37,7 @@ export type ResourceType =
   | 'DNS'
   | 'ZONE'
   | 'HOSTNAME'
+  | 'TUNNEL'
   | 'USER'
   | 'FALLBACK_ORIGIN'
   | 'CREDENTIAL'

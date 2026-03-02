@@ -46,6 +46,7 @@ export const RESOURCE_TYPES = {
   DNS: 'DNS 记录',
   ZONE: '域名',
   HOSTNAME: '自定义主机名',
+  TUNNEL: 'Tunnel',
   USER: '用户',
   CREDENTIAL: '供应商账户',
   DOMAIN_EXPIRY: '域名到期',

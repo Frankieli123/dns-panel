@@ -49,6 +49,7 @@ function App() {
         <Route index element={<Dashboard />} />
         <Route path="domain/:zoneId" element={<DomainDetail />} />
         <Route path="hostnames/:zoneId" element={<CustomHostnames />} />
+        <Route path="tunnels" element={<Tunnels />} />
         <Route path="tunnels/:zoneId" element={<Tunnels />} />
         <Route path="logs" element={<Logs />} />
         <Route path="settings" element={<Settings />} />

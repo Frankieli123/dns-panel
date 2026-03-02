@@ -24,7 +24,6 @@ import {
   Language as LanguageIcon,
   Refresh as RefreshIcon,
   ArrowBack as ArrowBackIcon,
-  CloudQueue as CloudQueueIcon,
 } from '@mui/icons-material';
 import { getDNSRecords, createDNSRecord, updateDNSRecord, deleteDNSRecord, getDNSLines, getDNSMinTTL, setDNSRecordStatus, refreshDNSRecords } from '@/services/dns';
 import { getDomainById } from '@/services/domains';
@@ -64,7 +63,6 @@ export default function DomainDetail() {
     : selectedProvider) ?? undefined;
   const capabilities = getProviderCapabilities(credentialProvider);
   const supportsCustomHostnames = credentialProvider === 'cloudflare';
-  const supportsTunnels = credentialProvider === 'cloudflare';
   const supportsLine = capabilities?.supportsLine ?? false;
   const supportsStatus = capabilities?.supportsStatus ?? false;
 
@@ -214,19 +212,6 @@ export default function DomainDetail() {
                 sx={{ flex: { xs: 1, sm: 'none' } }}
               >
                 主机名
-              </Button>
-            )}
-            {supportsTunnels && (
-              <Button
-                variant="outlined"
-                size="small"
-                startIcon={<CloudQueueIcon />}
-                onClick={() => {
-                  navigate(credentialId ? `/tunnels/${zoneId}?credentialId=${credentialId}` : `/tunnels/${zoneId}`);
-                }}
-                sx={{ flex: { xs: 1, sm: 'none' } }}
-              >
-                Tunnel
               </Button>
             )}
             <Button
