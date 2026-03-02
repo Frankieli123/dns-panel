@@ -192,6 +192,9 @@ export default function Tunnels() {
     queryFn: () => getTunnels(credentialId!),
     enabled: typeof credentialId === 'number' && !isKnownNonCloudflare,
   });
+  const tunnelsErrorText = error
+    ? String((error as any)?.message || error || '').trim()
+    : '';
 
   const tunnels: Tunnel[] = data?.data?.tunnels || [];
   const filteredTunnels = useMemo(() => {
@@ -348,203 +351,208 @@ export default function Tunnels() {
         </Stack>
       </Box>
 
-      <Card
-        sx={{
-          border: 'none',
-          boxShadow: isMobile ? 'none' : '0 4px 20px rgba(0,0,0,0.05)',
-          bgcolor: isMobile ? 'transparent' : 'background.paper',
-        }}
-      >
-        <CardContent sx={{ p: isMobile ? 0 : 0 }}>
-          {isLoading ? (
-            <Box sx={{ display: 'flex', justifyContent: 'center', alignItems: 'center', p: 3 }}>
-              <CircularProgress size={24} />
-            </Box>
-          ) : error ? (
-            <Alert severity="error" sx={{ m: 2 }}>
-              {(error as any)?.message || String(error)}
-            </Alert>
-          ) : filteredTunnels.length === 0 ? (
+      {error ? (
+        <Alert
+          severity="error"
+          sx={{ mb: 2 }}
+        >
+          {tunnelsErrorText || '获取 Tunnel 列表失败，请稍后重试。'}
+        </Alert>
+      ) : (
+        <Card
+          sx={{
+            border: 'none',
+            boxShadow: isMobile ? 'none' : '0 4px 20px rgba(0,0,0,0.05)',
+            bgcolor: isMobile ? 'transparent' : 'background.paper',
+          }}
+        >
+          <CardContent sx={{ p: isMobile ? 0 : 0 }}>
+            {isLoading ? (
+              <Box sx={{ display: 'flex', justifyContent: 'center', alignItems: 'center', p: 3 }}>
+                <CircularProgress size={24} />
+              </Box>
+            ) : filteredTunnels.length === 0 ? (
             <Alert severity="info" sx={{ m: 2 }}>
               暂无 Tunnel
             </Alert>
-          ) : isMobile ? (
-            <Stack spacing={2} sx={{ p: 2 }}>
-              {filteredTunnels.map((t) => {
-                const isExpanded = expandedTunnelId === t.id;
-
-                return (
-                  <Card key={t.id} variant="outlined" sx={{ borderRadius: 2 }}>
-                    <CardContent sx={{ pb: isExpanded ? 1 : 1.5 }}>
-                      <Stack direction="row" justifyContent="space-between" alignItems="flex-start" spacing={2}>
-                        <Box sx={{ minWidth: 0 }}>
-                          <Typography variant="subtitle1" fontWeight="bold" noWrap>
-                            {t.name || t.id}
-                          </Typography>
-                          <Typography variant="caption" color="text.secondary" sx={{ display: 'block' }}>
-                            {t.id}
-                          </Typography>
-                          <Typography variant="caption" color="text.secondary" sx={{ display: 'block' }}>
-                            路由: <TunnelPublicHostnamesCount credentialId={credentialId} tunnelId={t.id} mode="text" />
-                          </Typography>
-                        </Box>
-                        <Stack direction="row" spacing={0.5} alignItems="center">
-                          <Chip
-                            size="small"
-                            label={getStatusLabel(t.status)}
-                            color={getStatusColor(t.status) as any}
-                            variant="outlined"
-                          />
-                          <IconButton
-                            size="small"
-                            onClick={() => toggleTunnelExpand(t.id)}
-                            aria-label={isExpanded ? 'collapse tunnel details' : 'expand tunnel details'}
-                          >
-                            {isExpanded ? <KeyboardArrowUpIcon /> : <KeyboardArrowDownIcon />}
-                          </IconButton>
-                        </Stack>
-                      </Stack>
-
-                      <Divider sx={{ my: 1.5 }} />
-
-                      <Stack direction="row" justifyContent="space-between" alignItems="center">
-                        <Typography variant="caption" color="text.secondary">
-                          连接数: {Array.isArray(t.connections) ? t.connections.length : 0}
-                        </Typography>
-                        <Typography variant="caption" color="text.secondary">
-                          {t.created_at ? formatDateTime(t.created_at) : '-'}
-                        </Typography>
-                      </Stack>
-
-                      <Collapse in={isExpanded} timeout="auto" unmountOnExit>
-                        <Box sx={{ mt: 1.5 }}>
-                          <TunnelDetailsPanel
-                            tunnel={t}
-                            credentialId={credentialId}
-                            open={isExpanded}
-                            onCopyText={copyText}
-                          />
-                        </Box>
-                      </Collapse>
-                    </CardContent>
-
-                    <CardActions sx={{ pt: 0, px: 2, pb: 2 }}>
-                      <Button
-                        size="small"
-                        startIcon={<AltRouteIcon />}
-                        onClick={() => setPublicHostnamesTunnel(t)}
-                        sx={{ flex: 1 }}
-                      >
-                        路由管理
-                      </Button>
-                      <Button
-                        size="small"
-                        color="error"
-                        startIcon={<DeleteIcon />}
-                        onClick={() => {
-                          openDeleteDialog(t);
-                        }}
-                        disabled={deleteMutation.isPending}
-                        sx={{ flex: 1 }}
-                      >
-                        删除
-                      </Button>
-                    </CardActions>
-                  </Card>
-                );
-              })}
-            </Stack>
-          ) : (
-            <Table>
-              <TableHead>
-                <TableRow>
-                  <TableCell width={56} />
-                  <TableCell>名称</TableCell>
-                  <TableCell>ID</TableCell>
-                  <TableCell>状态</TableCell>
-                  <TableCell>路由</TableCell>
-                  <TableCell>连接数</TableCell>
-                  <TableCell>创建时间</TableCell>
-                  <TableCell align="right">操作</TableCell>
-                </TableRow>
-              </TableHead>
-              <TableBody>
+            ) : isMobile ? (
+              <Stack spacing={2} sx={{ p: 2 }}>
                 {filteredTunnels.map((t) => {
                   const isExpanded = expandedTunnelId === t.id;
 
                   return (
-                    <Fragment key={t.id}>
-                      <TableRow hover sx={{ '& > *': { borderBottom: isExpanded ? 'unset' : undefined } }}>
-                        <TableCell>
-                          <IconButton
-                            size="small"
-                            onClick={() => toggleTunnelExpand(t.id)}
-                            aria-label={isExpanded ? 'collapse tunnel details' : 'expand tunnel details'}
-                          >
-                            {isExpanded ? <KeyboardArrowUpIcon /> : <KeyboardArrowDownIcon />}
-                          </IconButton>
-                        </TableCell>
-                        <TableCell sx={{ fontWeight: 600 }}>{t.name || '-'}</TableCell>
-                        <TableCell sx={{ fontFamily: 'monospace' }}>{t.id}</TableCell>
-                        <TableCell>
-                          <Chip
-                            size="small"
-                            label={getStatusLabel(t.status)}
-                            color={getStatusColor(t.status) as any}
-                            variant="outlined"
-                          />
-                        </TableCell>
-                        <TableCell>
-                          <TunnelPublicHostnamesCount credentialId={credentialId} tunnelId={t.id} mode="chip" />
-                        </TableCell>
-                        <TableCell>{Array.isArray(t.connections) ? t.connections.length : 0}</TableCell>
-                        <TableCell>{t.created_at ? formatDateTime(t.created_at) : '-'}</TableCell>
-                        <TableCell align="right">
-                          <Tooltip title="路由管理">
-                            <span>
-                              <IconButton size="small" onClick={() => setPublicHostnamesTunnel(t)}>
-                                <AltRouteIcon fontSize="small" />
-                              </IconButton>
-                            </span>
-                          </Tooltip>
-                          <Tooltip title="删除">
-                            <span>
-                              <IconButton
-                                size="small"
-                                color="error"
-                                onClick={() => {
-                                  openDeleteDialog(t);
-                                }}
-                                disabled={deleteMutation.isPending}
-                              >
-                                <DeleteIcon fontSize="small" />
-                              </IconButton>
-                            </span>
-                          </Tooltip>
-                        </TableCell>
-                      </TableRow>
-                      <TableRow>
-                        <TableCell colSpan={8} sx={{ p: 0, borderBottom: 0 }}>
-                          <Collapse in={isExpanded} timeout="auto" unmountOnExit>
-                            <Box sx={{ p: 2 }}>
-                              <TunnelDetailsPanel
-                                tunnel={t}
-                                credentialId={credentialId}
-                                open={isExpanded}
-                                onCopyText={copyText}
-                              />
-                            </Box>
-                          </Collapse>
-                        </TableCell>
-                      </TableRow>
-                    </Fragment>
+                    <Card key={t.id} variant="outlined" sx={{ borderRadius: 2 }}>
+                      <CardContent sx={{ pb: isExpanded ? 1 : 1.5 }}>
+                        <Stack direction="row" justifyContent="space-between" alignItems="flex-start" spacing={2}>
+                          <Box sx={{ minWidth: 0 }}>
+                            <Typography variant="subtitle1" fontWeight="bold" noWrap>
+                              {t.name || t.id}
+                            </Typography>
+                            <Typography variant="caption" color="text.secondary" sx={{ display: 'block' }}>
+                              {t.id}
+                            </Typography>
+                            <Typography variant="caption" color="text.secondary" sx={{ display: 'block' }}>
+                              路由: <TunnelPublicHostnamesCount credentialId={credentialId} tunnelId={t.id} mode="text" />
+                            </Typography>
+                          </Box>
+                          <Stack direction="row" spacing={0.5} alignItems="center">
+                            <Chip
+                              size="small"
+                              label={getStatusLabel(t.status)}
+                              color={getStatusColor(t.status) as any}
+                              variant="outlined"
+                            />
+                            <IconButton
+                              size="small"
+                              onClick={() => toggleTunnelExpand(t.id)}
+                              aria-label={isExpanded ? 'collapse tunnel details' : 'expand tunnel details'}
+                            >
+                              {isExpanded ? <KeyboardArrowUpIcon /> : <KeyboardArrowDownIcon />}
+                            </IconButton>
+                          </Stack>
+                        </Stack>
+
+                        <Divider sx={{ my: 1.5 }} />
+
+                        <Stack direction="row" justifyContent="space-between" alignItems="center">
+                          <Typography variant="caption" color="text.secondary">
+                            连接数: {Array.isArray(t.connections) ? t.connections.length : 0}
+                          </Typography>
+                          <Typography variant="caption" color="text.secondary">
+                            {t.created_at ? formatDateTime(t.created_at) : '-'}
+                          </Typography>
+                        </Stack>
+
+                        <Collapse in={isExpanded} timeout="auto" unmountOnExit>
+                          <Box sx={{ mt: 1.5 }}>
+                            <TunnelDetailsPanel
+                              tunnel={t}
+                              credentialId={credentialId}
+                              open={isExpanded}
+                              onCopyText={copyText}
+                            />
+                          </Box>
+                        </Collapse>
+                      </CardContent>
+
+                      <CardActions sx={{ pt: 0, px: 2, pb: 2 }}>
+                        <Button
+                          size="small"
+                          startIcon={<AltRouteIcon />}
+                          onClick={() => setPublicHostnamesTunnel(t)}
+                          sx={{ flex: 1 }}
+                        >
+                          路由管理
+                        </Button>
+                        <Button
+                          size="small"
+                          color="error"
+                          startIcon={<DeleteIcon />}
+                          onClick={() => {
+                            openDeleteDialog(t);
+                          }}
+                          disabled={deleteMutation.isPending}
+                          sx={{ flex: 1 }}
+                        >
+                          删除
+                        </Button>
+                      </CardActions>
+                    </Card>
                   );
                 })}
-              </TableBody>
-            </Table>
-          )}
-        </CardContent>
-      </Card>
+              </Stack>
+            ) : (
+              <Table>
+                <TableHead>
+                  <TableRow>
+                    <TableCell width={56} />
+                    <TableCell>名称</TableCell>
+                    <TableCell>ID</TableCell>
+                    <TableCell>状态</TableCell>
+                    <TableCell>路由</TableCell>
+                    <TableCell>连接数</TableCell>
+                    <TableCell>创建时间</TableCell>
+                    <TableCell align="right">操作</TableCell>
+                  </TableRow>
+                </TableHead>
+                <TableBody>
+                  {filteredTunnels.map((t) => {
+                    const isExpanded = expandedTunnelId === t.id;
+
+                    return (
+                      <Fragment key={t.id}>
+                        <TableRow hover sx={{ '& > *': { borderBottom: isExpanded ? 'unset' : undefined } }}>
+                          <TableCell>
+                            <IconButton
+                              size="small"
+                              onClick={() => toggleTunnelExpand(t.id)}
+                              aria-label={isExpanded ? 'collapse tunnel details' : 'expand tunnel details'}
+                            >
+                              {isExpanded ? <KeyboardArrowUpIcon /> : <KeyboardArrowDownIcon />}
+                            </IconButton>
+                          </TableCell>
+                          <TableCell sx={{ fontWeight: 600 }}>{t.name || '-'}</TableCell>
+                          <TableCell sx={{ fontFamily: 'monospace' }}>{t.id}</TableCell>
+                          <TableCell>
+                            <Chip
+                              size="small"
+                              label={getStatusLabel(t.status)}
+                              color={getStatusColor(t.status) as any}
+                              variant="outlined"
+                            />
+                          </TableCell>
+                          <TableCell>
+                            <TunnelPublicHostnamesCount credentialId={credentialId} tunnelId={t.id} mode="chip" />
+                          </TableCell>
+                          <TableCell>{Array.isArray(t.connections) ? t.connections.length : 0}</TableCell>
+                          <TableCell>{t.created_at ? formatDateTime(t.created_at) : '-'}</TableCell>
+                          <TableCell align="right">
+                            <Tooltip title="路由管理">
+                              <span>
+                                <IconButton size="small" onClick={() => setPublicHostnamesTunnel(t)}>
+                                  <AltRouteIcon fontSize="small" />
+                                </IconButton>
+                              </span>
+                            </Tooltip>
+                            <Tooltip title="删除">
+                              <span>
+                                <IconButton
+                                  size="small"
+                                  color="error"
+                                  onClick={() => {
+                                    openDeleteDialog(t);
+                                  }}
+                                  disabled={deleteMutation.isPending}
+                                >
+                                  <DeleteIcon fontSize="small" />
+                                </IconButton>
+                              </span>
+                            </Tooltip>
+                          </TableCell>
+                        </TableRow>
+                        <TableRow>
+                          <TableCell colSpan={8} sx={{ p: 0, borderBottom: 0 }}>
+                            <Collapse in={isExpanded} timeout="auto" unmountOnExit>
+                              <Box sx={{ p: 2 }}>
+                                <TunnelDetailsPanel
+                                  tunnel={t}
+                                  credentialId={credentialId}
+                                  open={isExpanded}
+                                  onCopyText={copyText}
+                                />
+                              </Box>
+                            </Collapse>
+                          </TableCell>
+                        </TableRow>
+                      </Fragment>
+                    );
+                  })}
+                </TableBody>
+              </Table>
+            )}
+          </CardContent>
+        </Card>
+      )}
 
       <Dialog open={showCreateDialog} onClose={() => setShowCreateDialog(false)} fullWidth maxWidth="sm">
         <DialogTitle>新建 Tunnel</DialogTitle>
