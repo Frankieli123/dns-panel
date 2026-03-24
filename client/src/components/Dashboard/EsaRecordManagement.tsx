@@ -590,38 +590,48 @@ export default function EsaRecordManagement({
       await queryClient.invalidateQueries({ queryKey: ['esa-records', credentialId, siteId] });
       await queryClient.invalidateQueries({ queryKey: ['esa-cname-status', credentialId, siteId] });
       await queryClient.invalidateQueries({ queryKey: ['esa-cert-status', credentialId, siteId] });
-      closeDialog();
       const recordId = String(resp?.data?.recordId || '').trim();
-      if (!recordId) return;
+      if (!recordId) {
+        closeDialog();
+        return;
+      }
 
       try {
         const detail = await getEsaRecord({ credentialId, recordId, region });
         const record = detail.data?.record;
         const rn = String(record?.recordName || '').trim();
         const rc = String(record?.recordCname || '').trim();
-        if (!rn || !rc) return;
+        if (!rn || !rc) {
+          closeDialog();
+          return;
+        }
 
         setIsCheckingAutoDns(true);
+        let nextAutoDnsRequest: AutoDnsConfigRequest | null = null;
         try {
           const candidates = await findMatchingCandidateZones(allDnsCredentials, rn);
           if (candidates.length > 0) {
-            setAutoDnsRequest({
+            nextAutoDnsRequest = {
               title: '自动配置 ESA 业务 CNAME',
               description: '检测到项目内已存在可托管该 CNAME 的域名，可直接自动创建；若取消，将回退到当前手动复制弹窗。',
               recordType: 'CNAME',
               fqdn: rn,
               value: rc,
               candidates,
-            });
-            return;
+            };
           }
         } finally {
           setIsCheckingAutoDns(false);
         }
 
+        closeDialog();
+        if (nextAutoDnsRequest) {
+          setAutoDnsRequest(nextAutoDnsRequest);
+          return;
+        }
         setCnameGuide({ recordName: rn, recordCname: rc });
       } catch {
-        // ignore
+        closeDialog();
       }
     },
     onError: (err) => {
@@ -651,7 +661,7 @@ export default function EsaRecordManagement({
     },
   });
 
-  const isSaving = createMutation.isPending || updateMutation.isPending;
+  const isSaving = createMutation.isPending || updateMutation.isPending || isCheckingAutoDns;
 
   const normalizedType = useMemo(() => String(type || '').trim().toUpperCase(), [type]);
   const showPriority = normalizedType === 'MX';
@@ -803,6 +813,7 @@ export default function EsaRecordManagement({
   const renderRecordEditorFields = (topMargin: number, compact = false) => (
     <Stack spacing={2.5} sx={{ mt: topMargin }}>
       {submitError && <Alert severity="error">{submitError}</Alert>}
+      {isCheckingAutoDns && <Alert severity="info">记录已创建，正在检查项目内可自动配置的 DNS...</Alert>}
 
       {!compact && isCnameAccess && (
         <Alert severity="info">
@@ -1132,12 +1143,6 @@ export default function EsaRecordManagement({
       {certStatusError && (
         <Alert severity="warning" sx={{ mb: 2 }}>
           无法获取 HTTPS 证书状态：{String((certStatusError as any)?.message || certStatusError)}
-        </Alert>
-      )}
-
-      {isCheckingAutoDns && (
-        <Alert severity="info" sx={{ mb: 2 }}>
-          正在检查项目内是否存在可自动配置的 DNS 域名...
         </Alert>
       )}
 

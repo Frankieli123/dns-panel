@@ -170,23 +170,27 @@ export default function AddEsaSiteDialog({
     mutationFn: (payload: { credentialId: number; siteName: string; coverage: string; accessType: string; instanceId: string; region?: string }) =>
       createEsaSite(payload),
     onSuccess: async (resp) => {
-      setCreated(resp.data ? {
+      const createdSite = resp.data ? {
         siteId: resp.data.siteId,
         verifyCode: resp.data.verifyCode,
         nameServerList: resp.data.nameServerList,
-      } : null);
+      } : null;
       setSubmitError(null);
 
       const verifyCode = String(resp.data?.verifyCode || '').trim();
       const verifyRecordName = siteName.trim() ? `_esaauth.${siteName.trim()}` : '';
       if (String(accessType || '').trim().toUpperCase() !== 'CNAME' || !verifyCode || !verifyRecordName) {
+        setCreated(createdSite);
         return;
       }
 
       setIsCheckingAutoDns(true);
       try {
         const candidates = await findMatchingCandidateZones(allDnsCredentials, verifyRecordName);
-        if (candidates.length === 0) return;
+        if (candidates.length === 0) {
+          setCreated(createdSite);
+          return;
+        }
 
         setAutoDnsRequest({
           title: '自动配置 ESA 验证 TXT',
@@ -211,6 +215,9 @@ export default function AddEsaSiteDialog({
             },
           },
         });
+        return;
+      } catch {
+        setCreated(createdSite);
       } finally {
         setIsCheckingAutoDns(false);
       }
@@ -224,6 +231,7 @@ export default function AddEsaSiteDialog({
   const canSubmit =
     !!selectedCredential &&
     !mutation.isPending &&
+    !isCheckingAutoDns &&
     !instancesQuery.isLoading &&
     !!siteName.trim() &&
     !!coverage.trim() &&
@@ -271,7 +279,7 @@ export default function AddEsaSiteDialog({
   };
 
   const handleDone = () => {
-    if (mutation.isPending) return;
+    if (mutation.isPending || isCheckingAutoDns) return;
     onClose(!!created?.siteId);
   };
 
@@ -304,7 +312,7 @@ export default function AddEsaSiteDialog({
             onChange={(e) => setCredentialId(parseInt(e.target.value, 10))}
             fullWidth
             size="small"
-            disabled={mutation.isPending || credentials.length === 0}
+            disabled={mutation.isPending || isCheckingAutoDns || credentials.length === 0}
             helperText={credentials.length === 0 ? '暂无可用账户，请先在设置中添加阿里云 DNS 凭证' : undefined}
           >
             {credentials.map(c => (
@@ -319,7 +327,7 @@ export default function AddEsaSiteDialog({
             onChange={(e) => setSiteName(e.target.value)}
             fullWidth
             size="small"
-            disabled={mutation.isPending}
+            disabled={mutation.isPending || isCheckingAutoDns}
             autoComplete="off"
           />
 
@@ -330,7 +338,7 @@ export default function AddEsaSiteDialog({
             onChange={(e) => setAccessType(e.target.value)}
             fullWidth
             size="small"
-            disabled={mutation.isPending}
+            disabled={mutation.isPending || isCheckingAutoDns}
             helperText={accessHelp}
           >
             {ACCESS_TYPE_OPTIONS.map(o => (
@@ -345,7 +353,7 @@ export default function AddEsaSiteDialog({
             onChange={(e) => setCoverage(e.target.value)}
             fullWidth
             size="small"
-            disabled={mutation.isPending}
+            disabled={mutation.isPending || isCheckingAutoDns}
             helperText={coverageHelp}
           >
             {COVERAGE_OPTIONS.map(o => (
@@ -360,7 +368,7 @@ export default function AddEsaSiteDialog({
             onChange={(e) => setInstanceId(e.target.value)}
             fullWidth
             size="small"
-            disabled={mutation.isPending || instancesQuery.isLoading}
+            disabled={mutation.isPending || isCheckingAutoDns || instancesQuery.isLoading}
             helperText={
               instancesQuery.isLoading
                 ? '加载中...'
@@ -403,10 +411,9 @@ export default function AddEsaSiteDialog({
           {submitError && <Alert severity="error">{submitError}</Alert>}
 
           {isCheckingAutoDns && (
-            <Box sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
-              <CircularProgress size={18} />
-              <Typography variant="body2" color="text.secondary">正在检查项目内是否存在可自动配置的 DNS...</Typography>
-            </Box>
+            <Alert severity="info" icon={<CircularProgress size={16} color="inherit" />}>
+              站点已创建，正在检查项目内是否存在可自动配置的 DNS...
+            </Alert>
           )}
 
           {mutation.isPending && (
@@ -467,7 +474,7 @@ export default function AddEsaSiteDialog({
         </Stack>
       </DialogContent>
       <DialogActions sx={{ px: 3, pb: 3 }}>
-        <Button onClick={handleDone} color="inherit" disabled={mutation.isPending}>
+        <Button onClick={handleDone} color="inherit" disabled={mutation.isPending || isCheckingAutoDns}>
           {created?.siteId ? '完成' : '取消'}
         </Button>
         <Button
