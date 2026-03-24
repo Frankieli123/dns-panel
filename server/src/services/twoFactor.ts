@@ -196,6 +196,7 @@ export class TwoFactorService {
       email: string | null;
       domainExpiryDisplayMode: string;
       domainExpiryThresholdDays: number;
+      showNonAuthoritativeDomains: boolean;
       domainExpiryNotifyEnabled: boolean;
       domainExpiryNotifyWebhookUrl: string | null;
       domainExpiryNotifyEmailEnabled: boolean;
@@ -223,6 +224,7 @@ export class TwoFactorService {
         twoFactorEnabled: true,
         domainExpiryDisplayMode: true,
         domainExpiryThresholdDays: true,
+        showNonAuthoritativeDomains: true,
         domainExpiryNotifyEnabled: true,
         domainExpiryNotifyWebhookUrl: true,
         domainExpiryNotifyEmailEnabled: true,
@@ -269,6 +271,7 @@ export class TwoFactorService {
         email: user.email,
         domainExpiryDisplayMode: user.domainExpiryDisplayMode,
         domainExpiryThresholdDays: user.domainExpiryThresholdDays,
+        showNonAuthoritativeDomains: (user as any).showNonAuthoritativeDomains ?? false,
         domainExpiryNotifyEnabled: user.domainExpiryNotifyEnabled,
         domainExpiryNotifyWebhookUrl: user.domainExpiryNotifyWebhookUrl,
         domainExpiryNotifyEmailEnabled: (user as any).domainExpiryNotifyEmailEnabled ?? false,

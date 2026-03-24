@@ -25,6 +25,15 @@ import {
 interface SpaceshipDomain {
   name: string;
   status?: string;
+  unicodeName?: string;
+  registrationDate?: string;
+  expirationDate?: string;
+  lifecycleStatus?: string;
+  verificationStatus?: string;
+  nameservers?: {
+    provider?: string;
+    hosts?: string[];
+  };
 }
 
 interface SpaceshipRecord {
@@ -175,6 +184,33 @@ export class SpaceshipProvider extends BaseProvider {
     return this.createError(code, message, { cause: err });
   }
 
+  private normalizeNameServers(values?: string[]): string[] | undefined {
+    if (!Array.isArray(values) || values.length === 0) return undefined;
+    const list = Array.from(new Set(values.map(item => String(item || '').trim()).filter(Boolean)));
+    return list.length > 0 ? list : undefined;
+  }
+
+  private toZone(domain: SpaceshipDomain): Zone {
+    const nameServerProvider = String(domain.nameservers?.provider || '').trim();
+    const delegatedNameServers = this.normalizeNameServers(domain.nameservers?.hosts);
+
+    return this.normalizeZone({
+      id: domain.name,
+      name: domain.name,
+      status: domain.lifecycleStatus || domain.status || 'active',
+      updatedAt: domain.expirationDate,
+      meta: {
+        raw: domain,
+        nameServers: nameServerProvider.toLowerCase() === 'basic' ? delegatedNameServers : undefined,
+        currentNameServers: delegatedNameServers,
+        nameServerProvider: nameServerProvider || undefined,
+        verificationStatus: domain.verificationStatus,
+        registrationDate: domain.registrationDate,
+        expirationDate: domain.expirationDate,
+      },
+    });
+  }
+
   private headers(): Record<string, string> {
     return {
       'X-API-Key': this.apiKey,
@@ -268,13 +304,7 @@ export class SpaceshipProvider extends BaseProvider {
       const list = resp.items || [];
       const total = (resp as any).totalCount || (resp as any).total || list.length;
 
-      const zones: Zone[] = list.map(d =>
-        this.normalizeZone({
-          id: d.name,
-          name: d.name,
-          status: d.status || 'active',
-        })
-      );
+      const zones: Zone[] = list.map(d => this.toZone(d));
 
       return { total, zones };
     } catch (err) {
@@ -283,7 +313,12 @@ export class SpaceshipProvider extends BaseProvider {
   }
 
   async getZone(zoneId: string): Promise<Zone> {
-    return this.normalizeZone({ id: zoneId, name: zoneId, status: 'active' });
+    try {
+      const domain = await this.request<SpaceshipDomain>('GET', `/domains/${zoneId}`);
+      return this.toZone(domain);
+    } catch (err) {
+      throw this.wrapError(err);
+    }
   }
 
   async getRecords(zoneId: string, params?: RecordQueryParams): Promise<RecordListResult> {

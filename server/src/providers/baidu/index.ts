@@ -42,6 +42,7 @@ interface BaiduZone {
   productVersion?: string;
   createTime?: string;
   expireTime?: string;
+  tags?: Array<{ tagKey?: string; tagValue?: string }>;
 }
 
 interface BaiduZonesResponse {
@@ -127,6 +128,28 @@ export class BaiduProvider extends BaseProvider {
     return this.createError(code, message, { cause: err });
   }
 
+  private normalizeZoneName(name: string): string {
+    const value = String(name || '').trim();
+    return value.endsWith('.') ? value.slice(0, -1) : value;
+  }
+
+  private toZone(zone: BaiduZone): Zone {
+    const name = this.normalizeZoneName(zone.name);
+    return this.normalizeZone({
+      id: name,
+      name,
+      status: zone.status || 'active',
+      meta: {
+        raw: zone,
+        zoneId: zone.id,
+        productVersion: zone.productVersion,
+        createTime: zone.createTime,
+        expireTime: zone.expireTime,
+        tags: zone.tags,
+      },
+    });
+  }
+
   private async request<T>(method: string, path: string, query?: Record<string, any>, body?: any): Promise<T> {
     const queryParams: Record<string, string> = {};
     if (query) {
@@ -196,16 +219,7 @@ export class BaiduProvider extends BaseProvider {
   async getZones(page?: number, pageSize?: number, keyword?: string): Promise<ZoneListResult> {
     try {
       const resp = await this.request<BaiduZonesResponse>('GET', '/v1/dns/zone', keyword ? { name: keyword } : undefined);
-      const zones: Zone[] = (resp.zones || []).map(z => {
-        const rawName = String(z.name || '').trim();
-        const name = rawName.endsWith('.') ? rawName.slice(0, -1) : rawName;
-        return this.normalizeZone({
-          id: name,
-          name,
-          status: z.status || 'active',
-          meta: { zoneId: z.id },
-        });
-      });
+      const zones: Zone[] = (resp.zones || []).map(z => this.toZone(z));
 
       return this.applyZoneQuery(zones, page, pageSize, keyword);
     } catch (err) {
@@ -214,7 +228,15 @@ export class BaiduProvider extends BaseProvider {
   }
 
   async getZone(zoneId: string): Promise<Zone> {
-    return this.normalizeZone({ id: zoneId, name: zoneId, status: 'active' });
+    try {
+      const name = this.normalizeZoneName(zoneId);
+      const resp = await this.request<BaiduZonesResponse>('GET', '/v1/dns/zone', { name });
+      const found = (resp.zones || []).find(item => this.normalizeZoneName(item.name) === name);
+      if (found) return this.toZone(found);
+      return this.normalizeZone({ id: name, name, status: 'active' });
+    } catch (err) {
+      throw this.wrapError(err);
+    }
   }
 
   async getRecords(zoneId: string, params?: RecordQueryParams): Promise<RecordListResult> {
@@ -333,9 +355,14 @@ export class BaiduProvider extends BaseProvider {
 
   async addZone(domain: string): Promise<Zone> {
     try {
-      const query = { clientToken: generateClientToken(), name: domain };
+      const name = this.normalizeZoneName(domain);
+      const query = { clientToken: generateClientToken(), name };
       await this.request('POST', '/v1/dns/zone', query);
-      return this.normalizeZone({ id: domain, name: domain, status: 'active' });
+      try {
+        return await this.getZone(name);
+      } catch {
+        return this.normalizeZone({ id: name, name, status: 'active' });
+      }
     } catch (err) {
       throw this.wrapError(err);
     }

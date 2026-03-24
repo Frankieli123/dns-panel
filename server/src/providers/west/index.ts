@@ -34,6 +34,16 @@ interface WestResponse {
 interface WestDomain {
   domain: string;
   domainid?: string;
+  regdate?: string;
+  expdate?: string;
+  dns1?: string;
+  dns2?: string;
+  dns3?: string;
+  dns4?: string;
+  dns5?: string;
+  dns6?: string;
+  clienthold?: number;
+  registrars?: string;
 }
 
 interface WestRecord {
@@ -110,6 +120,11 @@ const fromWestLine = (line?: string): string | undefined => {
   return v;
 };
 
+const uniqStrings = (values: Array<string | undefined>): string[] | undefined => {
+  const list = Array.from(new Set(values.map(item => String(item || '').trim()).filter(Boolean)));
+  return list.length > 0 ? list : undefined;
+};
+
 export class WestProvider extends BaseProvider {
   private readonly host = 'api.west.cn';
   private readonly basePath = '/api/v2';
@@ -128,6 +143,28 @@ export class WestProvider extends BaseProvider {
     if (err instanceof DnsProviderError) return err;
     const message = (err as any)?.message ? String((err as any).message) : String(err);
     return this.createError(code, message, { cause: err });
+  }
+
+  private normalizeDomain(value: string): string {
+    return String(value || '').trim().replace(/\.$/, '');
+  }
+
+  private toZone(domain: WestDomain): Zone {
+    const name = this.normalizeDomain(domain.domain);
+    return this.normalizeZone({
+      id: name,
+      name,
+      status: 'active',
+      meta: {
+        raw: domain,
+        domainId: domain.domainid,
+        regdate: domain.regdate,
+        expdate: domain.expdate,
+        currentNameServers: uniqStrings([domain.dns1, domain.dns2, domain.dns3, domain.dns4, domain.dns5, domain.dns6]),
+        clienthold: domain.clienthold,
+        registrars: domain.registrars,
+      },
+    });
   }
 
   private timeMs(): number {
@@ -214,13 +251,7 @@ export class WestProvider extends BaseProvider {
       const list: WestDomain[] = resp.data?.items || resp.data || [];
       const total = resp.total || resp.data?.total || list.length;
 
-      const zones: Zone[] = list.map(d =>
-        this.normalizeZone({
-          id: d.domain,
-          name: d.domain,
-          status: 'active',
-        })
-      );
+      const zones: Zone[] = list.map(d => this.toZone(d));
 
       return { total, zones };
     } catch (err) {
@@ -229,7 +260,16 @@ export class WestProvider extends BaseProvider {
   }
 
   async getZone(zoneId: string): Promise<Zone> {
-    return this.normalizeZone({ id: zoneId, name: zoneId, status: 'active' });
+    try {
+      const name = this.normalizeDomain(zoneId);
+      const resp = await this.request<WestResponse>('getdomains', { domain: name, page: 1, limit: 1 });
+      const list: WestDomain[] = resp.data?.items || resp.data || [];
+      const found = list.find(item => this.normalizeDomain(item.domain) === name);
+      if (found) return this.toZone(found);
+      return this.normalizeZone({ id: name, name, status: 'active' });
+    } catch (err) {
+      throw this.wrapError(err);
+    }
   }
 
   async getRecords(zoneId: string, params?: RecordQueryParams): Promise<RecordListResult> {

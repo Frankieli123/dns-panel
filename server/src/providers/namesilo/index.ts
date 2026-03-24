@@ -32,6 +32,19 @@ interface NamesiloResponse {
   };
 }
 
+interface NamesiloDomainInfoResponse {
+  reply?: {
+    code?: number;
+    detail?: string;
+    status?: string;
+    expires?: string;
+    locked?: string;
+    nameservers?: {
+      nameserver?: string[] | string;
+    };
+  };
+}
+
 interface NamesiloRecord {
   record_id: string;
   type: string;
@@ -50,6 +63,8 @@ function toRelativeName(host: string, zoneName: string): string {
   if (h.endsWith(`.${z}`)) return h.slice(0, -(z.length + 1)) || '@';
   return h;
 }
+
+const NAMESILO_DEFAULT_NAME_SERVERS = ['ns1.dnsowl.com', 'ns2.dnsowl.com', 'ns3.dnsowl.com'];
 
 export const NAMESILO_CAPABILITIES: ProviderCapabilities = {
   provider: ProviderType.NAMESILO,
@@ -95,6 +110,36 @@ export class NamesiloProvider extends BaseProvider {
     if (err instanceof DnsProviderError) return err;
     const message = (err as any)?.message ? String((err as any).message) : String(err);
     return this.createError(code, message, { cause: err });
+  }
+
+  private uniqStrings(values?: Array<string | undefined>): string[] | undefined {
+    if (!Array.isArray(values) || values.length === 0) return undefined;
+    const list = Array.from(new Set(values.map(item => String(item || '').trim()).filter(Boolean)));
+    return list.length > 0 ? list : undefined;
+  }
+
+  private normalizeZoneName(name: string): string {
+    return String(name || '').trim().replace(/\.$/, '');
+  }
+
+  private toZone(zoneId: string, reply?: NamesiloDomainInfoResponse['reply']): Zone {
+    const name = this.normalizeZoneName(zoneId);
+    const nameServerRaw = reply?.nameservers?.nameserver;
+    const currentNameServers = this.uniqStrings(Array.isArray(nameServerRaw) ? nameServerRaw : [nameServerRaw]);
+
+    return this.normalizeZone({
+      id: name,
+      name,
+      status: reply?.status || 'active',
+      updatedAt: reply?.expires,
+      meta: {
+        raw: reply,
+        nameServers: NAMESILO_DEFAULT_NAME_SERVERS,
+        currentNameServers,
+        expires: reply?.expires,
+        locked: reply?.locked,
+      },
+    });
   }
 
   private async request<T = NamesiloResponse>(operation: string, query?: Record<string, any>): Promise<T> {
@@ -187,7 +232,13 @@ export class NamesiloProvider extends BaseProvider {
   }
 
   async getZone(zoneId: string): Promise<Zone> {
-    return this.normalizeZone({ id: zoneId, name: zoneId, status: 'active' });
+    try {
+      const name = this.normalizeZoneName(zoneId);
+      const resp = await this.request<NamesiloDomainInfoResponse>('getDomainInfo', { domain: name });
+      return this.toZone(name, resp.reply);
+    } catch (err) {
+      throw this.wrapError(err);
+    }
   }
 
   async getRecords(zoneId: string, params?: RecordQueryParams): Promise<RecordListResult> {

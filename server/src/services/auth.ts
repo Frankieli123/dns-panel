@@ -18,6 +18,7 @@ interface LoginResult {
     email: string | null;
     domainExpiryDisplayMode: string;
     domainExpiryThresholdDays: number;
+    showNonAuthoritativeDomains: boolean;
     domainExpiryNotifyEnabled: boolean;
     domainExpiryNotifyWebhookUrl: string | null;
     domainExpiryNotifyEmailEnabled: boolean;
@@ -144,6 +145,7 @@ export class AuthService {
         email: user.email,
         domainExpiryDisplayMode: user.domainExpiryDisplayMode,
         domainExpiryThresholdDays: user.domainExpiryThresholdDays,
+        showNonAuthoritativeDomains: (user as any).showNonAuthoritativeDomains ?? false,
         domainExpiryNotifyEnabled: user.domainExpiryNotifyEnabled,
         domainExpiryNotifyWebhookUrl: user.domainExpiryNotifyWebhookUrl,
         domainExpiryNotifyEmailEnabled: (user as any).domainExpiryNotifyEmailEnabled ?? false,
@@ -172,6 +174,7 @@ export class AuthService {
         twoFactorEnabled: true,
         domainExpiryDisplayMode: true,
         domainExpiryThresholdDays: true,
+        showNonAuthoritativeDomains: true,
         domainExpiryNotifyEnabled: true,
         domainExpiryNotifyWebhookUrl: true,
         domainExpiryNotifyEmailEnabled: true,
@@ -203,6 +206,7 @@ export class AuthService {
     input: {
       displayMode?: 'date' | 'days';
       thresholdDays?: number;
+      showNonAuthoritativeDomains?: boolean;
       notifyEnabled?: boolean;
       webhookUrl?: string | null;
       notifyEmailEnabled?: boolean;
@@ -219,6 +223,7 @@ export class AuthService {
       where: { id: userId },
       select: {
         email: true,
+        showNonAuthoritativeDomains: true,
         domainExpiryNotifyEmailEnabled: true,
         domainExpiryNotifyEmailTo: true,
         smtpHost: true,
@@ -387,6 +392,10 @@ export class AuthService {
       data.domainExpiryThresholdDays = parsed;
     }
 
+    if (input.showNonAuthoritativeDomains !== undefined) {
+      data.showNonAuthoritativeDomains = !!input.showNonAuthoritativeDomains;
+    }
+
     if (input.notifyEnabled !== undefined) {
       data.domainExpiryNotifyEnabled = !!input.notifyEnabled;
     }
@@ -423,6 +432,7 @@ export class AuthService {
         email: true,
         domainExpiryDisplayMode: true,
         domainExpiryThresholdDays: true,
+        showNonAuthoritativeDomains: true,
         domainExpiryNotifyEnabled: true,
         domainExpiryNotifyWebhookUrl: true,
         domainExpiryNotifyEmailEnabled: true,

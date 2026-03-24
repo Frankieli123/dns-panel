@@ -20,7 +20,10 @@ import {
 } from '@mui/material';
 import { ContentCopy as CopyIcon } from '@mui/icons-material';
 import type { DnsCredential } from '@/types/dns';
-import { createEsaSite, ESA_SUPPORTED_REGIONS, listEsaRatePlanInstances, type EsaRatePlanInstance } from '@/services/aliyunEsa';
+import { useProvider } from '@/contexts/ProviderContext';
+import AutoDnsConfigDialog, { type AutoDnsConfigRequest } from './AutoDnsConfigDialog';
+import { findMatchingCandidateZones } from '@/utils/autoDns';
+import { createEsaSite, ESA_SUPPORTED_REGIONS, listEsaRatePlanInstances, verifyEsaSite, type EsaRatePlanInstance } from '@/services/aliyunEsa';
 
 const COVERAGE_OPTIONS: Array<{ value: string; label: string; help: string }> = [
   { value: 'overseas', label: '海外', help: '不包含中国内地' },
@@ -57,6 +60,7 @@ export default function AddEsaSiteDialog({
 }) {
   const theme = useTheme();
   const isMobile = useMediaQuery(theme.breakpoints.down('sm'));
+  const { credentials: allDnsCredentials } = useProvider();
 
   const [credentialId, setCredentialId] = useState<number>(() => initialCredentialId ?? credentials[0]?.id ?? 0);
   const [siteName, setSiteName] = useState('');
@@ -66,6 +70,8 @@ export default function AddEsaSiteDialog({
   const [submitError, setSubmitError] = useState<string | null>(null);
   const [created, setCreated] = useState<{ siteId: string; verifyCode?: string; nameServerList?: string } | null>(null);
   const [copiedKey, setCopiedKey] = useState<string | null>(null);
+  const [autoDnsRequest, setAutoDnsRequest] = useState<AutoDnsConfigRequest | null>(null);
+  const [isCheckingAutoDns, setIsCheckingAutoDns] = useState(false);
 
   useEffect(() => {
     if (!open) return;
@@ -77,6 +83,8 @@ export default function AddEsaSiteDialog({
     setSubmitError(null);
     setCreated(null);
     setCopiedKey(null);
+    setAutoDnsRequest(null);
+    setIsCheckingAutoDns(false);
   }, [open, initialCredentialId, credentials]);
 
   const selectedCredential = useMemo(
@@ -161,13 +169,51 @@ export default function AddEsaSiteDialog({
   const mutation = useMutation({
     mutationFn: (payload: { credentialId: number; siteName: string; coverage: string; accessType: string; instanceId: string; region?: string }) =>
       createEsaSite(payload),
-    onSuccess: (resp) => {
+    onSuccess: async (resp) => {
       setCreated(resp.data ? {
         siteId: resp.data.siteId,
         verifyCode: resp.data.verifyCode,
         nameServerList: resp.data.nameServerList,
       } : null);
       setSubmitError(null);
+
+      const verifyCode = String(resp.data?.verifyCode || '').trim();
+      const verifyRecordName = siteName.trim() ? `_esaauth.${siteName.trim()}` : '';
+      if (String(accessType || '').trim().toUpperCase() !== 'CNAME' || !verifyCode || !verifyRecordName) {
+        return;
+      }
+
+      setIsCheckingAutoDns(true);
+      try {
+        const candidates = await findMatchingCandidateZones(allDnsCredentials, verifyRecordName);
+        if (candidates.length === 0) return;
+
+        setAutoDnsRequest({
+          title: '自动配置 ESA 验证 TXT',
+          description: '检测到项目内已存在可托管该 TXT 的域名，可直接自动创建；若不处理，仍可按当前弹窗内容手动配置。',
+          recordType: 'TXT',
+          fqdn: verifyRecordName,
+          value: verifyCode,
+          candidates,
+          afterUpsert: {
+            pendingText: 'TXT 已处理，正在自动验证 ESA 站点...',
+            successText: 'ESA 站点验证已自动完成',
+            run: async () => {
+              const verifyResp = await verifyEsaSite({
+                credentialId: selectedCredential?.id || credentialId,
+                siteId: String(resp.data?.siteId || ''),
+                region: selectedRegion,
+              });
+              if (verifyResp.data?.passed) {
+                return { success: true, message: 'ESA 站点验证已自动完成' };
+              }
+              return { success: false, message: 'TXT 已创建，但 ESA 自动验证暂未通过，可能需要等待 DNS 生效后再试' };
+            },
+          },
+        });
+      } finally {
+        setIsCheckingAutoDns(false);
+      }
     },
     onError: (err) => {
       setSubmitError(String(err));
@@ -227,6 +273,13 @@ export default function AddEsaSiteDialog({
   const handleDone = () => {
     if (mutation.isPending) return;
     onClose(!!created?.siteId);
+  };
+
+  const handleAutoDnsClose = (configured: boolean) => {
+    setAutoDnsRequest(null);
+    if (configured) {
+      onClose(true);
+    }
   };
 
   const coverageHelp = COVERAGE_OPTIONS.find(o => o.value === coverage)?.help;
@@ -348,6 +401,13 @@ export default function AddEsaSiteDialog({
 
           {submitError && <Alert severity="error">{submitError}</Alert>}
 
+          {isCheckingAutoDns && (
+            <Box sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
+              <CircularProgress size={18} />
+              <Typography variant="body2" color="text.secondary">正在检查项目内是否存在可自动配置的 DNS...</Typography>
+            </Box>
+          )}
+
           {mutation.isPending && (
             <Box sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
               <CircularProgress size={18} />
@@ -417,6 +477,12 @@ export default function AddEsaSiteDialog({
           {mutation.isPending ? <CircularProgress size={22} color="inherit" /> : '创建站点'}
         </Button>
       </DialogActions>
+
+      <AutoDnsConfigDialog
+        open={!!autoDnsRequest}
+        request={autoDnsRequest}
+        onClose={handleAutoDnsClose}
+      />
     </Dialog>
   );
 }

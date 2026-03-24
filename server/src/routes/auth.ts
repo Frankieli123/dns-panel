@@ -234,6 +234,7 @@ router.put('/domain-expiry-settings', authenticateToken, async (req: AuthRequest
     const {
       displayMode,
       thresholdDays,
+      showNonAuthoritativeDomains,
       notifyEnabled,
       webhookUrl,
       notifyEmailEnabled,
@@ -250,9 +251,14 @@ router.put('/domain-expiry-settings', authenticateToken, async (req: AuthRequest
       return errorResponse(res, 'displayMode 仅支持 date 或 days', 400);
     }
 
+    if (showNonAuthoritativeDomains !== undefined && typeof showNonAuthoritativeDomains !== 'boolean') {
+      return errorResponse(res, 'showNonAuthoritativeDomains 必须为布尔值', 400);
+    }
+
     const user = await AuthService.updateDomainExpirySettings(req.user!.id, {
       displayMode,
       thresholdDays,
+      showNonAuthoritativeDomains,
       notifyEnabled,
       webhookUrl,
       notifyEmailEnabled,
@@ -276,6 +282,7 @@ router.put('/domain-expiry-settings', authenticateToken, async (req: AuthRequest
         action: 'domain_expiry_settings',
         displayMode: user.domainExpiryDisplayMode,
         thresholdDays: user.domainExpiryThresholdDays,
+        showNonAuthoritativeDomains: (user as any).showNonAuthoritativeDomains ?? false,
         notifyEnabled: user.domainExpiryNotifyEnabled,
         webhookUrl: user.domainExpiryNotifyWebhookUrl ? 'set' : null,
         notifyEmailEnabled: (user as any).domainExpiryNotifyEmailEnabled ?? false,

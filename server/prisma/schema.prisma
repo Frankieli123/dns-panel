@@ -22,6 +22,7 @@ model User {
   twoFactorEnabled  Boolean  @default(false) // 是否启用 2FA
   domainExpiryDisplayMode   String   @default("date") // date | days
   domainExpiryThresholdDays Int      @default(7)
+  showNonAuthoritativeDomains Boolean @default(false)
   domainExpiryNotifyEnabled Boolean  @default(false)
   domainExpiryNotifyWebhookUrl String?
   domainExpiryNotifyEmailEnabled Boolean @default(false)

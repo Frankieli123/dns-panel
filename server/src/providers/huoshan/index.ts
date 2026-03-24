@@ -41,11 +41,29 @@ interface HuoshanZone {
   RecordCount?: number;
   UpdatedAt?: string;
   TradeCode?: string;
+  Status?: number;
+  Stage?: number;
+  AllocateDNSServerList?: string[];
+  RealDNSServerList?: string[];
+  IsNSCorrect?: boolean;
 }
 
 interface HuoshanZonesResponse {
   Total?: number;
   Zones?: HuoshanZone[];
+}
+
+interface HuoshanZoneNameServerInfo {
+  ZID?: number;
+  Name?: string;
+  Stage?: number;
+  AllocateDNSServerList?: string[];
+  RealDNSServerList?: string[];
+  IsNSCorrect?: boolean;
+}
+
+interface HuoshanZoneNameServersResponse {
+  ZonesNameServer?: HuoshanZoneNameServerInfo[];
 }
 
 interface HuoshanRecord {
@@ -133,6 +151,12 @@ function joinMxValue(type: string, value: string, priority?: number): string {
   return `${Number(priority)} ${value}`;
 }
 
+function uniqStrings(values?: string[]): string[] | undefined {
+  if (!Array.isArray(values) || values.length === 0) return undefined;
+  const list = Array.from(new Set(values.map(item => String(item || '').trim()).filter(Boolean)));
+  return list.length > 0 ? list : undefined;
+}
+
 export const HUOSHAN_CAPABILITIES: ProviderCapabilities = {
   provider: ProviderType.HUOSHAN,
   name: '火山引擎 DNS',
@@ -180,6 +204,50 @@ export class HuoshanProvider extends BaseProvider {
     if (err instanceof DnsProviderError) return err;
     const message = (err as any)?.message ? String((err as any).message) : String(err);
     return this.createError(code, message, { cause: err });
+  }
+
+  private async getZoneNameServerMap(zoneIds: Array<string | number>): Promise<Map<string, HuoshanZoneNameServerInfo>> {
+    const ids = Array.from(new Set(zoneIds.map(item => String(item || '').trim()).filter(Boolean)));
+    if (ids.length === 0) return new Map();
+
+    try {
+      const resp = await this.request<HuoshanZoneNameServersResponse>('GET', 'ListZonesNameServer', { ZIDs: ids.join(',') });
+      return new Map((resp.ZonesNameServer || [])
+        .filter(item => item?.ZID !== undefined && item?.ZID !== null)
+        .map(item => [String(item.ZID), item]));
+    } catch {
+      return new Map();
+    }
+  }
+
+  private toZone(input: HuoshanZone, nameServerInfo?: HuoshanZoneNameServerInfo): Zone {
+    const expectedNameServers = uniqStrings(nameServerInfo?.AllocateDNSServerList || input.AllocateDNSServerList);
+    const currentNameServers = uniqStrings(nameServerInfo?.RealDNSServerList || input.RealDNSServerList);
+    const raw = {
+      ...input,
+      ...(nameServerInfo || {}),
+      AllocateDNSServerList: expectedNameServers,
+      RealDNSServerList: currentNameServers,
+      IsNSCorrect: nameServerInfo?.IsNSCorrect ?? input.IsNSCorrect,
+      Stage: nameServerInfo?.Stage ?? input.Stage,
+    };
+
+    return this.normalizeZone({
+      id: String(input.ZID),
+      name: input.ZoneName,
+      status: 'active',
+      recordCount: input.RecordCount,
+      updatedAt: input.UpdatedAt,
+      meta: {
+        raw,
+        TradeCode: input.TradeCode,
+        nameServers: expectedNameServers,
+        currentNameServers,
+        isNSCorrect: nameServerInfo?.IsNSCorrect ?? input.IsNSCorrect,
+        stage: nameServerInfo?.Stage ?? input.Stage,
+        statusCode: input.Status,
+      },
+    });
   }
 
   private async request<T>(method: string, action: string, query?: Record<string, any>, body?: any): Promise<T> {
@@ -265,16 +333,8 @@ export class HuoshanProvider extends BaseProvider {
       if (keyword) query.Key = keyword;
 
       const resp = await this.request<HuoshanZonesResponse>('GET', 'ListZones', query);
-      const zones: Zone[] = (resp.Zones || []).map(z =>
-        this.normalizeZone({
-          id: String(z.ZID),
-          name: z.ZoneName,
-          status: 'active',
-          recordCount: z.RecordCount,
-          updatedAt: z.UpdatedAt,
-          meta: { TradeCode: z.TradeCode },
-        })
-      );
+      const nameServerMap = await this.getZoneNameServerMap((resp.Zones || []).map(item => item.ZID));
+      const zones: Zone[] = (resp.Zones || []).map(z => this.toZone(z, nameServerMap.get(String(z.ZID))));
 
       return { total: resp.Total || zones.length, zones };
     } catch (err) {
@@ -284,14 +344,8 @@ export class HuoshanProvider extends BaseProvider {
 
   async getZone(zoneId: string): Promise<Zone> {
     try {
-      const resp = await this.request<{ ZID: number; ZoneName: string; RecordCount?: number; TradeCode?: string }>('GET', 'QueryZone', { ZID: zoneId });
-      return this.normalizeZone({
-        id: String(resp.ZID),
-        name: resp.ZoneName,
-        status: 'active',
-        recordCount: resp.RecordCount,
-        meta: { TradeCode: resp.TradeCode },
-      });
+      const resp = await this.request<HuoshanZone>('GET', 'QueryZone', { ZID: zoneId });
+      return this.toZone(resp);
     } catch (err) {
       throw this.wrapError(err);
     }
@@ -503,11 +557,15 @@ export class HuoshanProvider extends BaseProvider {
   async addZone(domain: string): Promise<Zone> {
     try {
       const resp = await this.request<{ ZID: number }>('POST', 'CreateZone', undefined, { ZoneName: domain });
-      return this.normalizeZone({
-        id: String(resp.ZID),
-        name: domain,
-        status: 'active',
-      });
+      try {
+        return await this.getZone(String(resp.ZID));
+      } catch {
+        return this.normalizeZone({
+          id: String(resp.ZID),
+          name: domain,
+          status: 'active',
+        });
+      }
     } catch (err) {
       throw this.wrapError(err);
     }

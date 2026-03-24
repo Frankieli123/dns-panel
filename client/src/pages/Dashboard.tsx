@@ -524,8 +524,11 @@ export default function Dashboard() {
   };
 
   const domains: Domain[] = data?.data?.domains || [];
+  const storedUser = getStoredUser();
+  const showNonAuthoritativeDomains = storedUser?.showNonAuthoritativeDomains === true;
   const filteredDomains = domains.filter((domain) =>
-    domain.name.toLowerCase().includes(searchTerm.toLowerCase())
+    (showNonAuthoritativeDomains || domain.authorityStatus !== 'non_authoritative')
+    && domain.name.toLowerCase().includes(searchTerm.toLowerCase())
   );
 
   const maxPage = Math.max(0, Math.ceil(filteredDomains.length / rowsPerPage) - 1);
@@ -542,7 +545,7 @@ export default function Dashboard() {
     return filteredDomains.slice(start, end);
   }, [filteredDomains, page, rowsPerPage]);
 
-  const expiryDisplayMode = getStoredUser()?.domainExpiryDisplayMode === 'days' ? 'days' : 'date';
+  const expiryDisplayMode = storedUser?.domainExpiryDisplayMode === 'days' ? 'days' : 'date';
   const expiryLabel = expiryDisplayMode === 'date' ? '到期日期' : '剩余天数';
   const expiryLookupDomains = useMemo(
     () => Array.from(new Set(pagedDomains.map(d => d.name.toLowerCase()))),
@@ -616,6 +619,19 @@ export default function Dashboard() {
     }
 
     return { label: raw || '-', color: 'default' as const, icon: null };
+  };
+
+  const getAuthorityConfig = (status?: Domain['authorityStatus']) => {
+    if (status === 'non_authoritative') {
+      return { label: '非权威', color: 'default' as const };
+    }
+    if (status === 'pending') {
+      return { label: '待接入', color: 'warning' as const };
+    }
+    if (!status || status === 'unknown') {
+      return { label: '待识别', color: 'default' as const };
+    }
+    return null;
   };
 
   const getEsaAccessTypeLabel = (accessType?: string): string | null => {
@@ -947,6 +963,7 @@ export default function Dashboard() {
     <Stack spacing={2}>
       {pagedDomains.map((domain) => {
         const status = getStatusConfig(domain.status);
+        const authority = !isEsaPanel ? getAuthorityConfig(domain.authorityStatus) : null;
         const rowKey = `${domain.id}-${domain.credentialId}`;
         const isExpanded = expandedDomainKey === rowKey;
         const detailPath = typeof domain.credentialId === 'number'
@@ -980,7 +997,7 @@ export default function Dashboard() {
                     )}
                   </Stack>
                   <Stack direction="row" spacing={1} alignItems="center">
-                     <Chip
+                      <Chip
                         icon={status.icon || undefined}
                         label={status.label}
                         color={status.color === 'default' ? 'default' : status.color}
@@ -999,6 +1016,16 @@ export default function Dashboard() {
                           '& .MuiChip-icon': { color: 'inherit' }
                         }}
                       />
+                      {authority && (
+                        <Chip
+                          size="small"
+                          label={authority.label}
+                          color={authority.color}
+                          variant="outlined"
+                          title={domain.authorityReason || authority.label}
+                          sx={{ height: 24, fontSize: '0.75rem', borderStyle: 'dashed' }}
+                        />
+                      )}
                       {showAccountColumn && (
                         <Chip
                           size="small"
@@ -1151,6 +1178,7 @@ export default function Dashboard() {
         <TableBody>
           {pagedDomains.map((domain) => {
             const status = getStatusConfig(domain.status);
+            const authority = !isEsaPanel ? getAuthorityConfig(domain.authorityStatus) : null;
             const rowKey = `${domain.id}-${domain.credentialId}`;
             const isExpanded = expandedDomainKey === rowKey;
             const detailPath = typeof domain.credentialId === 'number'
@@ -1302,23 +1330,35 @@ export default function Dashboard() {
                   ) : (
                     <>
                       <TableCell>
-                        <Chip
-                          icon={status.icon || undefined}
-                          label={status.label}
-                          color={status.color === 'default' ? 'default' : status.color}
-                          size="small"
-                          sx={{
-                            bgcolor: (theme) => status.color !== 'default'
-                              ? alpha(theme.palette[status.color as 'success' | 'warning' | 'error'].main, 0.1)
-                              : undefined,
-                            color: (theme) => status.color !== 'default'
-                              ? theme.palette[status.color as 'success' | 'warning' | 'error'].dark
-                              : undefined,
-                            fontWeight: 600,
-                            border: 'none',
-                            '& .MuiChip-icon': { color: 'inherit' }
-                          }}
-                        />
+                        <Stack direction="row" spacing={0.75} useFlexGap flexWrap="wrap">
+                          <Chip
+                            icon={status.icon || undefined}
+                            label={status.label}
+                            color={status.color === 'default' ? 'default' : status.color}
+                            size="small"
+                            sx={{
+                              bgcolor: (theme) => status.color !== 'default'
+                                ? alpha(theme.palette[status.color as 'success' | 'warning' | 'error'].main, 0.1)
+                                : undefined,
+                              color: (theme) => status.color !== 'default'
+                                ? theme.palette[status.color as 'success' | 'warning' | 'error'].dark
+                                : undefined,
+                              fontWeight: 600,
+                              border: 'none',
+                              '& .MuiChip-icon': { color: 'inherit' }
+                            }}
+                          />
+                          {authority && (
+                            <Chip
+                              size="small"
+                              label={authority.label}
+                              color={authority.color}
+                              variant="outlined"
+                              title={domain.authorityReason || authority.label}
+                              sx={{ borderStyle: 'dashed' }}
+                            />
+                          )}
+                        </Stack>
                       </TableCell>
                       <TableCell sx={{ color: 'text.secondary' }}>
                         {domain.updatedAt ? formatRelativeTime(domain.updatedAt) : '-'}

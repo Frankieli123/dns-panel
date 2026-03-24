@@ -59,6 +59,7 @@ export default function Settings() {
   const [expirySettingsSaving, setExpirySettingsSaving] = useState(false);
   const [expiryDisplayMode, setExpiryDisplayMode] = useState<'date' | 'days'>('date');
   const [expiryThresholdDays, setExpiryThresholdDays] = useState<string>('7');
+  const [showNonAuthoritativeDomains, setShowNonAuthoritativeDomains] = useState(false);
   const [expiryNotifyEnabled, setExpiryNotifyEnabled] = useState(false);
   const [expiryWebhookUrl, setExpiryWebhookUrl] = useState('');
   const [expiryEmailEnabled, setExpiryEmailEnabled] = useState(false);
@@ -98,6 +99,9 @@ export default function Settings() {
     }
     if (typeof stored?.domainExpiryThresholdDays === 'number' && Number.isFinite(stored.domainExpiryThresholdDays)) {
       setExpiryThresholdDays(String(stored.domainExpiryThresholdDays));
+    }
+    if (typeof stored?.showNonAuthoritativeDomains === 'boolean') {
+      setShowNonAuthoritativeDomains(stored.showNonAuthoritativeDomains);
     }
     if (typeof stored?.domainExpiryNotifyEnabled === 'boolean') {
       setExpiryNotifyEnabled(stored.domainExpiryNotifyEnabled);
@@ -148,6 +152,9 @@ export default function Settings() {
         }
         if (typeof user.domainExpiryThresholdDays === 'number' && Number.isFinite(user.domainExpiryThresholdDays)) {
           setExpiryThresholdDays(String(user.domainExpiryThresholdDays));
+        }
+        if (typeof user.showNonAuthoritativeDomains === 'boolean') {
+          setShowNonAuthoritativeDomains(user.showNonAuthoritativeDomains);
         }
         if (typeof user.domainExpiryNotifyEnabled === 'boolean') {
           setExpiryNotifyEnabled(user.domainExpiryNotifyEnabled);
@@ -278,6 +285,7 @@ export default function Settings() {
       const payload: any = {
         displayMode: expiryDisplayMode,
         thresholdDays: threshold,
+        showNonAuthoritativeDomains,
         notifyEnabled: expiryNotifyEnabled,
         webhookUrl: expiryWebhookUrl.trim() ? expiryWebhookUrl.trim() : null,
         notifyEmailEnabled: expiryEmailEnabled,
@@ -300,6 +308,7 @@ export default function Settings() {
       const user = res?.data?.user;
       if (user) {
         localStorage.setItem('user', JSON.stringify(user));
+        setShowNonAuthoritativeDomains(!!user.showNonAuthoritativeDomains);
         setSmtpHost(typeof user.smtpHost === 'string' ? user.smtpHost : '');
         setSmtpPort(typeof user.smtpPort === 'number' && Number.isFinite(user.smtpPort) ? String(user.smtpPort) : '587');
         setSmtpSecure(typeof user.smtpSecure === 'boolean' ? user.smtpSecure : false);
@@ -466,6 +475,7 @@ export default function Settings() {
                       保存
                     </Button>
                   </Stack>
+
                 </Stack>
 
                 <Divider sx={{ my: 3 }} />
@@ -473,6 +483,19 @@ export default function Settings() {
                 <Stack spacing={2}>
                   <Typography variant="subtitle1" fontWeight={600}>
                     域名到期
+                  </Typography>
+
+                  <FormControlLabel
+                    control={
+                      <Switch
+                        checked={showNonAuthoritativeDomains}
+                        onChange={(e) => setShowNonAuthoritativeDomains(e.target.checked)}
+                      />
+                    }
+                    label="显示非权威域名"
+                  />
+                  <Typography variant="body2" color="text.secondary">
+                    默认隐藏仅注册或当前未托管在本项目 DNS 提供商的域名；开启后仅用于排查，不影响 ESA / 自动 DNS。
                   </Typography>
 
                   {expirySettingsSuccess && (

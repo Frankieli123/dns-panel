@@ -8,6 +8,7 @@ export interface User {
   cfAccountId?: string;
   domainExpiryDisplayMode?: 'date' | 'days';
   domainExpiryThresholdDays?: number;
+  showNonAuthoritativeDomains?: boolean;
   domainExpiryNotifyEnabled?: boolean;
   domainExpiryNotifyWebhookUrl?: string | null;
   domainExpiryNotifyEmailEnabled?: boolean;
@@ -82,6 +83,12 @@ export interface Domain {
   status: string;
   recordCount?: number;
   updatedAt?: string;
+  authorityStatus?: 'authoritative' | 'pending' | 'non_authoritative' | 'unknown';
+  authorityReason?: string;
+  authorityMeta?: {
+    publicNameServers?: string[];
+    expectedNameServers?: string[];
+  };
   credentialId?: number;
   credentialName?: string;
   provider?: ProviderType;

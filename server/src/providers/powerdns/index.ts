@@ -27,6 +27,7 @@ interface PowerDnsZone {
   name: string;
   kind?: string;
   serial?: number;
+  nameservers?: string[];
   rrsets?: PowerDnsRRSet[];
 }
 
@@ -206,6 +207,10 @@ export class PowerdnsProvider extends BaseProvider {
           id: z.id,
           name: this.removeTrailingDot(z.name),
           status: 'active',
+          meta: {
+            raw: z,
+            nameServers: Array.isArray(z.nameservers) ? z.nameservers : undefined,
+          },
         })
       );
 
@@ -223,6 +228,10 @@ export class PowerdnsProvider extends BaseProvider {
         id: z.id,
         name: this.removeTrailingDot(z.name),
         status: 'active',
+        meta: {
+          raw: z,
+          nameServers: Array.isArray(z.nameservers) ? z.nameservers : undefined,
+        },
       });
     } catch (err) {
       throw this.wrapError(err);
@@ -511,6 +520,10 @@ export class PowerdnsProvider extends BaseProvider {
         id: resp.id || domainWithDot,
         name: domain,
         status: 'active',
+        meta: {
+          raw: resp,
+          nameServers: Array.isArray(resp.nameservers) ? resp.nameservers : undefined,
+        },
       });
     } catch (err) {
       throw this.wrapError(err);

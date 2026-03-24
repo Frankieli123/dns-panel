@@ -243,7 +243,15 @@ export class CloudflareService {
         id: zone.id,
         name: zone.name,
         status: zone.status || 'active',
+        type: typeof zone?.type === 'string' ? zone.type : undefined,
         updatedAt: zone.modified_on,
+        nameServers: Array.isArray(zone?.name_servers)
+          ? zone.name_servers.filter((item: any) => typeof item === 'string')
+          : undefined,
+        vanityNameServers: Array.isArray(zone?.vanity_name_servers)
+          ? zone.vanity_name_servers.filter((item: any) => typeof item === 'string')
+          : undefined,
+        activatedOn: typeof zone?.activated_on === 'string' ? zone.activated_on : undefined,
       }));
 
       cache.set(cacheKey, domains, config.cache.domainsTTL);

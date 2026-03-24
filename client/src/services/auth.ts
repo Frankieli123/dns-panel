@@ -80,6 +80,7 @@ export const updatePassword = async (params: {
 export const updateDomainExpirySettings = async (params: {
   displayMode?: 'date' | 'days';
   thresholdDays?: number;
+  showNonAuthoritativeDomains?: boolean;
   notifyEnabled?: boolean;
   webhookUrl?: string | null;
   notifyEmailEnabled?: boolean;

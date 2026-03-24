@@ -130,10 +130,25 @@ type DescribeDomainListResponse = TcResponse<{
     DomainId: number;
     Name: string;
     Status?: string;
+    DNSStatus?: string;
+    EffectiveDNS?: string[];
     RecordCount?: number;
     UpdatedOn?: string;
   }>;
   DomainCountInfo?: { AllTotal?: number };
+}>;
+
+type DescribeDomainResponse = TcResponse<{
+  DomainInfo?: {
+    DomainId?: number;
+    Domain?: string;
+    Status?: string;
+    DnsStatus?: string;
+    RecordCount?: number;
+    UpdatedOn?: string;
+    ActualNsList?: string[];
+    DnspodNsList?: string[];
+  };
 }>;
 
 type DescribeRecordListResponse = TcResponse<{
@@ -486,7 +501,10 @@ export class DnspodProvider extends BaseProvider {
           status: d.Status || 'unknown',
           recordCount: d.RecordCount,
           updatedAt: d.UpdatedOn,
-          meta: { raw: d },
+          meta: {
+            raw: d,
+            nameServers: Array.isArray(d.EffectiveDNS) ? d.EffectiveDNS : undefined,
+          },
         })
       );
 
@@ -500,19 +518,30 @@ export class DnspodProvider extends BaseProvider {
     try {
       if (this.legacyProvider) return await this.legacyProvider.getZone(zoneId);
       const idNum = Number(zoneId);
-      if (!Number.isFinite(idNum)) {
-        throw this.createError('INVALID_ZONE_ID', `DomainId 必须为数字: ${zoneId}`, { httpStatus: 400 });
+      const payload = Number.isFinite(idNum)
+        ? { DomainId: idNum }
+        : { Domain: String(zoneId || '').trim() };
+
+      const resp = await this.request<DescribeDomainResponse>('DescribeDomain', payload);
+      const info = resp.Response?.DomainInfo;
+      if (!info?.DomainId || !info?.Domain) {
+        throw this.createError('ZONE_NOT_FOUND', `域名不存在: ${zoneId}`, { httpStatus: 404 });
       }
 
-      // DNSPod 没有单独的 DescribeDomain API，需要遍历查找
-      for (let page = 1; page <= 50; page++) {
-        const resp = await this.getZones(page, 100);
-        const found = resp.zones.find(z => Number(z.id) === idNum);
-        if (found) return found;
-        if (page * 100 >= resp.total) break;
-      }
-
-      throw this.createError('ZONE_NOT_FOUND', `域名不存在: ${zoneId}`, { httpStatus: 404 });
+      return this.normalizeZone({
+        id: String(info.DomainId),
+        name: info.Domain,
+        status: info.Status || 'unknown',
+        recordCount: info.RecordCount,
+        updatedAt: info.UpdatedOn,
+        meta: {
+          raw: info,
+          nameServers: [
+            ...(Array.isArray(info.ActualNsList) ? info.ActualNsList : []),
+            ...(Array.isArray(info.DnspodNsList) ? info.DnspodNsList : []),
+          ],
+        },
+      });
     } catch (err) {
       throw this.wrapError(err);
     }

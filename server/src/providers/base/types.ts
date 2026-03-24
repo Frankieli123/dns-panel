@@ -107,6 +107,12 @@ export interface Zone {
   status: string;                  // 状态（active/pending/等）
   recordCount?: number;            // 记录数量
   updatedAt?: string;              // 最后更新时间
+  authorityStatus?: 'authoritative' | 'pending' | 'non_authoritative' | 'unknown';
+  authorityReason?: string;
+  authorityMeta?: {
+    publicNameServers?: string[];
+    expectedNameServers?: string[];
+  };
   meta?: Record<string, unknown>;  // 提供商特定的元数据
 }
 

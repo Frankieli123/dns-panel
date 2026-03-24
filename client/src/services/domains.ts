@@ -1,11 +1,25 @@
 import api from './api';
 import { ApiResponse, Domain } from '@/types';
 
+const mapZoneToDomain = (zone: any, credentialId?: number): Domain => ({
+  id: zone.id,
+  name: zone.name,
+  status: zone.status,
+  recordCount: zone.recordCount,
+  updatedAt: zone.updatedAt,
+  authorityStatus: zone.authorityStatus,
+  authorityReason: zone.authorityReason,
+  authorityMeta: zone.authorityMeta,
+  credentialId,
+});
+
 /**
  * 获取所有域名列表
  * @param credentialId 可选，指定凭证ID，或 'all' 获取所有
  */
-export const getDomains = async (credentialId?: number | 'all' | null): Promise<ApiResponse<{ domains: Domain[] }>> => {
+export const getDomains = async (
+  credentialId?: number | 'all' | null
+): Promise<ApiResponse<{ domains: Domain[] }>> => {
   const params: any = {};
   if (credentialId !== undefined && credentialId !== null) {
     params.credentialId = credentialId;
@@ -38,14 +52,7 @@ export const getDomains = async (credentialId?: number | 'all' | null): Promise<
   }
 
   const credId = typeof credentialId === 'number' ? credentialId : undefined;
-  const domains: Domain[] = zones.map((z: any) => ({
-    id: z.id,
-    name: z.name,
-    status: z.status,
-    recordCount: z.recordCount,
-    updatedAt: z.updatedAt,
-    credentialId: credId,
-  }));
+  const domains: Domain[] = zones.map((z: any) => mapZoneToDomain(z, credId));
 
   return {
     ...(firstResponse as any),
@@ -68,13 +75,7 @@ export const getDomainById = async (zoneId: string, credentialId?: number): Prom
   const response = await api.get(`/dns-records/zones/${zoneId}`, { params });
   const zone = (response as any)?.data?.zone;
   const domain = zone
-    ? {
-        id: zone.id,
-        name: zone.name,
-        status: zone.status,
-        recordCount: zone.recordCount,
-        updatedAt: zone.updatedAt,
-      }
+    ? mapZoneToDomain(zone, credentialId)
     : null;
 
   return {

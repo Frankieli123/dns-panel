@@ -21,6 +21,7 @@ import {
   Zone,
   ZoneListResult,
 } from '../../providers/base/types';
+import { attachZoneAuthority } from './zoneAuthority';
 
 /**
  * DNS Service 上下文
@@ -38,6 +39,89 @@ export class DnsService {
   private readonly cache: NodeCache;
   private readonly providerInstances = new Map<string, IDnsProvider>();
   private readonly cacheIndex = new Map<string, Set<string>>();
+
+  private zoneHasAuthorityMetadata(zone: Zone): boolean {
+    const meta = (zone.meta || {}) as Record<string, any>;
+    const raw = (meta.raw || {}) as Record<string, any>;
+
+    const candidates = [
+      meta.nameServers,
+      meta.vanityNameServers,
+      meta.expectedNameServers,
+      raw.name_servers,
+      raw.vanity_name_servers,
+      raw.nameServers,
+      raw.vanityNameServers,
+      raw.nameservers,
+      raw.EffectiveDNS,
+      raw.ActualNsList,
+      raw.DnspodNsList,
+      raw.DnsServers?.DnsServer,
+      raw.NameServers,
+      raw.defNsList,
+      raw.AllocateDNSServerList,
+    ];
+
+    return candidates.some(value => Array.isArray(value) && value.length > 0);
+  }
+
+  private async hydrateAuthorityZone(ctx: DnsServiceContext, zone: Zone): Promise<Zone> {
+    const needsDetailProviders = new Set<ProviderType>([
+      ProviderType.HUAWEI,
+      ProviderType.NAMESILO,
+    ]);
+
+    if (!needsDetailProviders.has(ctx.provider) || this.zoneHasAuthorityMetadata(zone)) {
+      return zone;
+    }
+
+    try {
+      const provider = this.getProvider(ctx);
+      return await provider.getZone(zone.id);
+    } catch {
+      return zone;
+    }
+  }
+
+  private async mapWithConcurrency<T, R>(
+    items: T[],
+    concurrency: number,
+    fn: (item: T) => Promise<R>
+  ): Promise<R[]> {
+    const list = Array.isArray(items) ? items : [];
+    const limit = Math.max(1, Math.min(concurrency, list.length || 1));
+    const results: R[] = new Array(list.length);
+    let cursor = 0;
+
+    const worker = async () => {
+      while (true) {
+        const current = cursor;
+        cursor += 1;
+        if (current >= list.length) return;
+        results[current] = await fn(list[current]);
+      }
+    };
+
+    await Promise.all(Array.from({ length: limit }, () => worker()));
+    return results;
+  }
+
+  private async enrichZoneAuthority(ctx: DnsServiceContext, zone: Zone): Promise<Zone> {
+    try {
+      const hydratedZone = await this.hydrateAuthorityZone(ctx, zone);
+      return await attachZoneAuthority(ctx.provider, hydratedZone);
+    } catch {
+      return {
+        ...zone,
+        authorityStatus: 'unknown',
+        authorityReason: '权威 DNS 识别失败',
+      };
+    }
+  }
+
+  private async enrichZoneListAuthority(ctx: DnsServiceContext, zones: Zone[]): Promise<Zone[]> {
+    return this.mapWithConcurrency(zones, 8, (zone) => this.enrichZoneAuthority(ctx, zone));
+  }
 
   constructor(cache?: NodeCache) {
     this.cache = cache || new NodeCache();
@@ -234,10 +318,15 @@ export class DnsService {
 
     try {
       const result = await provider.getZones(page, pageSize, keyword);
+      const zones = await this.enrichZoneListAuthority(ctx, result.zones);
+      const enriched: ZoneListResult = {
+        ...result,
+        zones,
+      };
       const ttl = caps.domainCacheTtl ?? config.cache.domainsTTL;
-      this.cache.set(cacheKey, result, ttl);
+      this.cache.set(cacheKey, enriched, ttl);
       this.rememberKey(ctx, cacheKey);
-      return result;
+      return enriched;
     } catch (err) {
       throw this.normalizeError(ctx.provider, err);
     }
@@ -249,7 +338,8 @@ export class DnsService {
   async getZone(ctx: DnsServiceContext, zoneId: string): Promise<Zone> {
     const provider = this.getProvider(ctx);
     try {
-      return await provider.getZone(zoneId);
+      const zone = await provider.getZone(zoneId);
+      return await this.enrichZoneAuthority(ctx, zone);
     } catch (err) {
       throw this.normalizeError(ctx.provider, err);
     }

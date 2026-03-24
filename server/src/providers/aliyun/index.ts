@@ -38,6 +38,7 @@ interface AliyunDomain {
   RecordCount?: number;
   Status?: string;
   UpdateTime?: string;
+  DnsServers?: { DnsServer?: string[] };
 }
 
 interface AliyunDescribeDomainsResponse extends AliyunErrorResponse {
@@ -325,13 +326,16 @@ export class AliyunProvider extends BaseProvider {
       });
 
       const zones: Zone[] = (resp.Domains?.Domain || []).map(d => {
+        const nameServers = Array.isArray(d.DnsServers?.DnsServer)
+          ? d.DnsServers!.DnsServer!.filter((s): s is string => typeof s === 'string' && s.trim().length > 0)
+          : undefined;
         const z = this.normalizeZone({
           id: d.DomainId,
           name: d.DomainName,
           status: d.Status || 'unknown',
           recordCount: d.RecordCount,
           updatedAt: d.UpdateTime,
-          meta: { raw: d },
+          meta: { raw: d, nameServers },
         });
         this.rememberZone({ id: z.id, name: z.name });
         return z;

@@ -57,6 +57,9 @@ import {
   type EsaDnsRecord,
   type EsaRatePlanInstance,
 } from '@/services/aliyunEsa';
+import { useProvider } from '@/contexts/ProviderContext';
+import AutoDnsConfigDialog, { type AutoDnsConfigRequest } from './AutoDnsConfigDialog';
+import { findMatchingCandidateZones } from '@/utils/autoDns';
 
 function normalizeRecordName(input: string, siteName: string): string {
   const raw = String(input || '').trim().replace(/\.$/, '');
@@ -158,6 +161,7 @@ export default function EsaRecordManagement({
   const theme = useTheme();
   const isMobile = useMediaQuery(theme.breakpoints.down('sm'));
   const queryClient = useQueryClient();
+  const { credentials: allDnsCredentials } = useProvider();
 
   const normalizedAccessType = String(accessType || '').trim().toUpperCase();
   const isCnameAccess = normalizedAccessType === 'CNAME';
@@ -255,7 +259,9 @@ export default function EsaRecordManagement({
   const [mobileEditingRecordId, setMobileEditingRecordId] = useState<string | null>(null);
   const [submitError, setSubmitError] = useState<string | null>(null);
   const [cnameGuide, setCnameGuide] = useState<{ recordName: string; recordCname: string } | null>(null);
+  const [autoDnsRequest, setAutoDnsRequest] = useState<AutoDnsConfigRequest | null>(null);
   const [copiedKey, setCopiedKey] = useState<string | null>(null);
+  const [isCheckingAutoDns, setIsCheckingAutoDns] = useState(false);
   const [httpsDialog, setHttpsDialog] = useState<{ recordName: string; recordId: string } | null>(null);
   const [certType, setCertType] = useState<string>('lets_encrypt');
   const [applyResult, setApplyResult] = useState<EsaCertificateApplyResult | null>(null);
@@ -497,6 +503,14 @@ export default function EsaRecordManagement({
     setCopiedKey(null);
   };
 
+  const closeAutoDnsDialog = (configured: boolean) => {
+    const fallback = autoDnsRequest;
+    setAutoDnsRequest(null);
+    if (!configured && fallback?.recordType === 'CNAME') {
+      setCnameGuide({ recordName: fallback.fqdn, recordCname: fallback.value });
+    }
+  };
+
   const handleCopy = async (key: string, text?: string) => {
     const normalized = String(text || '').trim();
     if (!normalized) return;
@@ -585,7 +599,27 @@ export default function EsaRecordManagement({
         const record = detail.data?.record;
         const rn = String(record?.recordName || '').trim();
         const rc = String(record?.recordCname || '').trim();
-        if (rn && rc) setCnameGuide({ recordName: rn, recordCname: rc });
+        if (!rn || !rc) return;
+
+        setIsCheckingAutoDns(true);
+        try {
+          const candidates = await findMatchingCandidateZones(allDnsCredentials, rn);
+          if (candidates.length > 0) {
+            setAutoDnsRequest({
+              title: '自动配置 ESA 业务 CNAME',
+              description: '检测到项目内已存在可托管该 CNAME 的域名，可直接自动创建；若取消，将回退到当前手动复制弹窗。',
+              recordType: 'CNAME',
+              fqdn: rn,
+              value: rc,
+              candidates,
+            });
+            return;
+          }
+        } finally {
+          setIsCheckingAutoDns(false);
+        }
+
+        setCnameGuide({ recordName: rn, recordCname: rc });
       } catch {
         // ignore
       }
@@ -1101,6 +1135,12 @@ export default function EsaRecordManagement({
         </Alert>
       )}
 
+      {isCheckingAutoDns && (
+        <Alert severity="info" sx={{ mb: 2 }}>
+          正在检查项目内是否存在可自动配置的 DNS 域名...
+        </Alert>
+      )}
+
       {isLoading ? (
         <Box sx={{ display: 'flex', justifyContent: 'center', py: 3 }}>
           <CircularProgress size={24} />
@@ -1582,6 +1622,12 @@ export default function EsaRecordManagement({
           </Button>
         </DialogActions>
       </Dialog>
+
+      <AutoDnsConfigDialog
+        open={!!autoDnsRequest}
+        request={autoDnsRequest}
+        onClose={closeAutoDnsDialog}
+      />
     </Box>
   );
 }

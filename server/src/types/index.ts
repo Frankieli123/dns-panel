@@ -70,6 +70,10 @@ export interface Domain {
   status: string;
   recordCount?: number;
   updatedAt?: string;
+  type?: string;
+  nameServers?: string[];
+  vanityNameServers?: string[];
+  activatedOn?: string;
 }
 
 /**

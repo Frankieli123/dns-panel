@@ -29,13 +29,24 @@ interface HuaweiZone {
   id: string;
   name: string;
   status?: string;
+  zone_type?: string;
   record_num?: number;
   updated_at?: string;
+  masters?: string[];
 }
 
 interface HuaweiZonesResponse {
   zones?: HuaweiZone[];
   metadata?: { total_count?: number };
+}
+
+interface HuaweiZoneNameServer {
+  hostname?: string;
+  priority?: number;
+}
+
+interface HuaweiZoneNameServersResponse {
+  nameservers?: HuaweiZoneNameServer[];
 }
 
 interface HuaweiRecordSet {
@@ -235,6 +246,19 @@ export class HuaweiProvider extends BaseProvider {
     return line;
   }
 
+  private async getZoneNameServers(zoneId: string): Promise<string[] | undefined> {
+    try {
+      const resp = await this.request<HuaweiZoneNameServersResponse>('GET', `/v2/zones/${zoneId}/nameservers`);
+      const values = (resp.nameservers || [])
+        .map(item => this.removeTrailingDot(item.hostname || ''))
+        .filter(Boolean);
+      const nameServers = Array.from(new Set(values));
+      return nameServers.length > 0 ? nameServers : undefined;
+    } catch {
+      return undefined;
+    }
+  }
+
   async checkAuth(): Promise<boolean> {
     try {
       await this.request<HuaweiZonesResponse>('GET', '/v2/zones', { limit: 1 });
@@ -252,13 +276,22 @@ export class HuaweiProvider extends BaseProvider {
       if (keyword) query.name = keyword;
 
       const resp = await this.request<HuaweiZonesResponse>('GET', '/v2/zones', query);
-      const zones: Zone[] = (resp.zones || []).map(z =>
-        this.normalizeZone({
-          id: z.id,
-          name: this.removeTrailingDot(z.name),
-          status: z.status || 'active',
-          recordCount: z.record_num,
-          updatedAt: z.updated_at,
+      const zones: Zone[] = await Promise.all(
+        (resp.zones || []).map(async z => {
+          const nameServers = await this.getZoneNameServers(z.id);
+          return this.normalizeZone({
+            id: z.id,
+            name: this.removeTrailingDot(z.name),
+            status: z.status || 'active',
+            recordCount: z.record_num,
+            updatedAt: z.updated_at,
+            meta: {
+              raw: nameServers ? { ...z, nameservers: nameServers } : z,
+              nameServers,
+              zoneType: z.zone_type,
+              masters: z.masters,
+            },
+          });
         })
       );
 
@@ -271,12 +304,19 @@ export class HuaweiProvider extends BaseProvider {
   async getZone(zoneId: string): Promise<Zone> {
     try {
       const z = await this.request<HuaweiZone>('GET', `/v2/zones/${zoneId}`);
+      const nameServers = await this.getZoneNameServers(z.id || zoneId);
       return this.normalizeZone({
         id: z.id,
         name: this.removeTrailingDot(z.name),
         status: z.status || 'active',
         recordCount: z.record_num,
         updatedAt: z.updated_at,
+        meta: {
+          raw: nameServers ? { ...z, nameservers: nameServers } : z,
+          nameServers,
+          zoneType: z.zone_type,
+          masters: z.masters,
+        },
       });
     } catch (err) {
       throw this.wrapError(err);

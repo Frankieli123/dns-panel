@@ -119,7 +119,11 @@ export class CloudflareProvider extends BaseProvider {
           status: d.status,
           recordCount: d.recordCount,
           updatedAt: d.updatedAt,
-          meta: { raw: d },
+          meta: {
+            raw: d,
+            nameServers: Array.isArray(d?.nameServers) ? d.nameServers : undefined,
+            vanityNameServers: Array.isArray(d?.vanityNameServers) ? d.vanityNameServers : undefined,
+          },
         })
       );
 
@@ -143,7 +147,11 @@ export class CloudflareProvider extends BaseProvider {
         status: raw?.status || 'unknown',
         recordCount: raw?.record_count,
         updatedAt: raw?.modified_on,
-        meta: { raw },
+        meta: {
+          raw,
+          nameServers: Array.isArray(raw?.name_servers) ? raw.name_servers : undefined,
+          vanityNameServers: Array.isArray(raw?.vanity_name_servers) ? raw.vanity_name_servers : undefined,
+        },
       });
     } catch (err) {
       throw this.wrapError(err);

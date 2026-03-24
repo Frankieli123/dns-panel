@@ -32,9 +32,16 @@ function rfc3986Encode(input: string): string {
 interface JdcloudDomain {
   id: number;
   domainName: string;
-  createTime?: string;
-  expirationDate?: string;
+  createTime?: string | number;
+  expirationDate?: string | number;
   packId?: number;
+  packName?: string;
+  resolvingStatus?: string;
+  creator?: string;
+  jcloudNs?: boolean;
+  lockStatus?: number;
+  probeNsList?: string[];
+  defNsList?: string[];
 }
 
 interface JdcloudDomainsResponse {
@@ -103,6 +110,12 @@ const fromJdcloudRecordType = (type: string): string => {
   return type;
 };
 
+const uniqStrings = (values?: string[]): string[] | undefined => {
+  if (!Array.isArray(values) || values.length === 0) return undefined;
+  const list = Array.from(new Set(values.map(item => String(item || '').trim()).filter(Boolean)));
+  return list.length > 0 ? list : undefined;
+};
+
 export const JDCLOUD_CAPABILITIES: ProviderCapabilities = {
   provider: ProviderType.JDCLOUD,
   name: '京东云 DNS',
@@ -149,6 +162,33 @@ export class JdcloudProvider extends BaseProvider {
     if (err instanceof DnsProviderError) return err;
     const message = (err as any)?.message ? String((err as any).message) : String(err);
     return this.createError(code, message, { cause: err });
+  }
+
+  private toZoneStatus(domain: JdcloudDomain): string {
+    const status = String(domain.resolvingStatus || '').trim();
+    if (status === '5') return 'pending';
+    if (status === '4' || status === '9') return 'paused';
+    if (status === '7' || status === '8') return 'unknown';
+    return 'active';
+  }
+
+  private toZone(domain: JdcloudDomain): Zone {
+    return this.normalizeZone({
+      id: String(domain.id),
+      name: domain.domainName,
+      status: this.toZoneStatus(domain),
+      meta: {
+        raw: domain,
+        packId: domain.packId,
+        packName: domain.packName,
+        nameServers: uniqStrings(domain.defNsList),
+        currentNameServers: uniqStrings(domain.probeNsList),
+        resolvingStatus: domain.resolvingStatus,
+        jcloudNs: domain.jcloudNs,
+        lockStatus: domain.lockStatus,
+        creator: domain.creator,
+      },
+    });
   }
 
   private async request<T>(method: string, path: string, query?: Record<string, any>, body?: any): Promise<T> {
@@ -234,14 +274,7 @@ export class JdcloudProvider extends BaseProvider {
       if (keyword) query.domainName = keyword;
 
       const resp = await this.request<JdcloudDomainsResponse>('GET', `/v2/regions/${this.region}/domain`, query);
-      const zones: Zone[] = (resp.result?.dataList || []).map(d =>
-        this.normalizeZone({
-          id: String(d.id),
-          name: d.domainName,
-          status: 'active',
-          meta: { packId: d.packId },
-        })
-      );
+      const zones: Zone[] = (resp.result?.dataList || []).map(d => this.toZone(d));
 
       return { total: resp.result?.totalCount || zones.length, zones };
     } catch (err) {
@@ -257,12 +290,7 @@ export class JdcloudProvider extends BaseProvider {
         const resp = await this.request<JdcloudDomainsResponse>('GET', `/v2/regions/${this.region}/domain`, { pageNumber: page, pageSize: 99 });
         const found = (resp.result?.dataList || []).find(d => String(d.id) === zoneId);
         if (found) {
-          return this.normalizeZone({
-            id: String(found.id),
-            name: found.domainName,
-            status: 'active',
-            meta: { packId: found.packId },
-          });
+          return this.toZone(found);
         }
         if ((page * 99) >= (resp.result?.totalCount || 0)) break;
         page++;
@@ -441,12 +469,16 @@ export class JdcloudProvider extends BaseProvider {
       );
       const id = resp.result?.data?.id;
       if (!id) throw this.createError('CREATE_FAILED', '添加域名失败');
-      return this.normalizeZone({
-        id: String(id),
-        name: resp.result?.data?.domainName || name,
-        status: 'active',
-        meta: { packId: resp.result?.data?.packId ?? 0 },
-      });
+      try {
+        return await this.getZone(String(id));
+      } catch {
+        return this.normalizeZone({
+          id: String(id),
+          name: resp.result?.data?.domainName || name,
+          status: 'pending',
+          meta: { packId: resp.result?.data?.packId ?? 0 },
+        });
+      }
     } catch (err) {
       // 若可能已存在，尝试直接查询并返回
       try {
