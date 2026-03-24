@@ -176,11 +176,11 @@ export default function AddEsaSiteDialog({
         nameServerList: resp.data.nameServerList,
       } : null;
       setSubmitError(null);
+      setCreated(createdSite);
 
       const verifyCode = String(resp.data?.verifyCode || '').trim();
       const verifyRecordName = siteName.trim() ? `_esaauth.${siteName.trim()}` : '';
       if (String(accessType || '').trim().toUpperCase() !== 'CNAME' || !verifyCode || !verifyRecordName) {
-        setCreated(createdSite);
         return;
       }
 
@@ -188,7 +188,6 @@ export default function AddEsaSiteDialog({
       try {
         const candidates = await findMatchingCandidateZones(allDnsCredentials, verifyRecordName);
         if (candidates.length === 0) {
-          setCreated(createdSite);
           return;
         }
 
@@ -217,7 +216,7 @@ export default function AddEsaSiteDialog({
         });
         return;
       } catch {
-        setCreated(createdSite);
+        return;
       } finally {
         setIsCheckingAutoDns(false);
       }
@@ -228,8 +227,11 @@ export default function AddEsaSiteDialog({
     },
   });
 
+  const isCreated = !!created?.siteId;
+  const isFormDisabled = mutation.isPending || isCheckingAutoDns || isCreated;
   const canSubmit =
     !!selectedCredential &&
+    !isCreated &&
     !mutation.isPending &&
     !isCheckingAutoDns &&
     !instancesQuery.isLoading &&
@@ -253,6 +255,7 @@ export default function AddEsaSiteDialog({
   };
 
   const handleSubmit = () => {
+    if (isCreated) return;
     if (!selectedCredential) {
       setSubmitError('请选择账户');
       return;
@@ -294,7 +297,7 @@ export default function AddEsaSiteDialog({
   const accessHelp = ACCESS_TYPE_OPTIONS.find(o => o.value === accessType)?.help;
 
   const verifyTxtName = siteName.trim() ? `_esaauth.${siteName.trim()}` : '_esaauth.<domain>';
-  const showManualTxtGuide = !!created?.siteId && accessType === 'CNAME' && !isCheckingAutoDns && !autoDnsRequest;
+  const showManualTxtGuide = isCreated && accessType === 'CNAME' && !isCheckingAutoDns && !autoDnsRequest;
 
   return (
     <Dialog open={open} onClose={handleDone} maxWidth="sm" fullWidth fullScreen={isMobile}>
@@ -312,7 +315,7 @@ export default function AddEsaSiteDialog({
             onChange={(e) => setCredentialId(parseInt(e.target.value, 10))}
             fullWidth
             size="small"
-            disabled={mutation.isPending || isCheckingAutoDns || credentials.length === 0}
+            disabled={isFormDisabled || credentials.length === 0}
             helperText={credentials.length === 0 ? '暂无可用账户，请先在设置中添加阿里云 DNS 凭证' : undefined}
           >
             {credentials.map(c => (
@@ -327,7 +330,7 @@ export default function AddEsaSiteDialog({
             onChange={(e) => setSiteName(e.target.value)}
             fullWidth
             size="small"
-            disabled={mutation.isPending || isCheckingAutoDns}
+            disabled={isFormDisabled}
             autoComplete="off"
           />
 
@@ -338,7 +341,7 @@ export default function AddEsaSiteDialog({
             onChange={(e) => setAccessType(e.target.value)}
             fullWidth
             size="small"
-            disabled={mutation.isPending || isCheckingAutoDns}
+            disabled={isFormDisabled}
             helperText={accessHelp}
           >
             {ACCESS_TYPE_OPTIONS.map(o => (
@@ -353,7 +356,7 @@ export default function AddEsaSiteDialog({
             onChange={(e) => setCoverage(e.target.value)}
             fullWidth
             size="small"
-            disabled={mutation.isPending || isCheckingAutoDns}
+            disabled={isFormDisabled}
             helperText={coverageHelp}
           >
             {COVERAGE_OPTIONS.map(o => (
@@ -368,7 +371,7 @@ export default function AddEsaSiteDialog({
             onChange={(e) => setInstanceId(e.target.value)}
             fullWidth
             size="small"
-            disabled={mutation.isPending || isCheckingAutoDns || instancesQuery.isLoading}
+            disabled={isFormDisabled || instancesQuery.isLoading}
             helperText={
               instancesQuery.isLoading
                 ? '加载中...'
@@ -477,13 +480,15 @@ export default function AddEsaSiteDialog({
         <Button onClick={handleDone} color="inherit" disabled={mutation.isPending || isCheckingAutoDns}>
           {created?.siteId ? '完成' : '取消'}
         </Button>
-        <Button
-          onClick={handleSubmit}
-          variant="contained"
-          disabled={!canSubmit}
-        >
-          {mutation.isPending ? <CircularProgress size={22} color="inherit" /> : '创建站点'}
-        </Button>
+        {!isCreated && (
+          <Button
+            onClick={handleSubmit}
+            variant="contained"
+            disabled={!canSubmit}
+          >
+            {mutation.isPending ? <CircularProgress size={22} color="inherit" /> : '创建站点'}
+          </Button>
+        )}
       </DialogActions>
 
       <AutoDnsConfigDialog

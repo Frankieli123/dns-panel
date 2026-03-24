@@ -1014,7 +1014,7 @@ export default function EsaRecordManagement({
                     label={`HTTPS ${httpsStatus.label}`}
                     color={httpsStatus.color}
                     clickable
-                    onClick={() => openEdit(r)}
+                    onClick={() => openHttps(r)}
                     sx={esaMetaChipSx}
                   />
                 </Stack>

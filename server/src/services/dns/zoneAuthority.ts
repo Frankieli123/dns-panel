@@ -114,7 +114,7 @@ const buildResult = (
   authorityStatus: status,
   authorityReason: reason,
   authorityMeta: {
-    publicNameServers: publicNameServers || undefined,
+    publicNameServers: Array.isArray(publicNameServers) && publicNameServers.length > 0 ? publicNameServers : undefined,
     expectedNameServers: expectedNameServers.length > 0 ? expectedNameServers : undefined,
   },
 });
@@ -135,6 +135,7 @@ export async function attachZoneAuthority(provider: ProviderType, zone: Zone): P
 
   const expectedNameServers = extractNameServers(zone);
   const publicNameServers = await resolvePublicNameServers(zone.name);
+  const hasResolvedPublicNameServers = Array.isArray(publicNameServers) && publicNameServers.length > 0;
   const raw = ((zone.meta || {}) as Record<string, any>).raw || {};
   const rawStatus = String(raw?.DNSStatus || raw?.DnsStatus || zone.status || '');
   const cfType = normalizeName(raw?.type);
@@ -162,7 +163,7 @@ export async function attachZoneAuthority(provider: ProviderType, zone: Zone): P
       result = buildResult('pending', 'Cloudflare Zone 尚未完成激活', publicNameServers, expectedNameServers);
     } else if (cfStatus === 'moved' || cfStatus === 'deleted' || cfStatus === 'purged') {
       result = buildResult('non_authoritative', 'Cloudflare Zone 当前不处于可用权威状态', publicNameServers, expectedNameServers);
-    } else if (publicNameServers && expectedNameServers.length > 0) {
+    } else if (hasResolvedPublicNameServers && expectedNameServers.length > 0) {
       result = intersects(publicNameServers, expectedNameServers)
         ? buildResult('authoritative', '公网 NS 指向当前 Cloudflare Zone', publicNameServers, expectedNameServers)
         : buildResult('non_authoritative', '公网 NS 未指向当前 Cloudflare Zone', publicNameServers, expectedNameServers);
@@ -172,7 +173,7 @@ export async function attachZoneAuthority(provider: ProviderType, zone: Zone): P
       result = buildResult('unknown', '暂时无法识别 Cloudflare Zone 权威状态', publicNameServers, expectedNameServers);
     }
   } else if (provider === ProviderType.DNSPOD) {
-    if (publicNameServers && expectedNameServers.length > 0) {
+    if (hasResolvedPublicNameServers && expectedNameServers.length > 0) {
       result = intersects(publicNameServers, expectedNameServers)
         ? buildResult('authoritative', '公网 NS 指向当前 DNSPod 域名', publicNameServers, expectedNameServers)
         : buildResult('non_authoritative', '公网 NS 未指向当前 DNSPod 域名', publicNameServers, expectedNameServers);
@@ -182,7 +183,7 @@ export async function attachZoneAuthority(provider: ProviderType, zone: Zone): P
       result = buildResult('unknown', '暂时无法识别 DNSPod 域名权威状态', publicNameServers, expectedNameServers);
     }
   } else if (provider === ProviderType.DNSPOD_TOKEN) {
-    if (publicNameServers && expectedNameServers.length > 0) {
+    if (hasResolvedPublicNameServers && expectedNameServers.length > 0) {
       result = intersects(publicNameServers, expectedNameServers)
         ? buildResult('authoritative', '公网 NS 指向当前 DNSPod 域名', publicNameServers, expectedNameServers)
         : buildResult('non_authoritative', '公网 NS 未指向当前 DNSPod 域名', publicNameServers, expectedNameServers);
@@ -192,7 +193,7 @@ export async function attachZoneAuthority(provider: ProviderType, zone: Zone): P
   } else if (provider === ProviderType.HUAWEI) {
     if (isPendingStatus(huaweiStatus)) {
       result = buildResult('pending', '华为云 Zone 仍处于处理中', publicNameServers, expectedNameServers);
-    } else if (publicNameServers && expectedNameServers.length > 0) {
+    } else if (hasResolvedPublicNameServers && expectedNameServers.length > 0) {
       result = intersects(publicNameServers, expectedNameServers)
         ? buildResult('authoritative', '公网 NS 指向当前华为云 Zone', publicNameServers, expectedNameServers)
         : buildResult('non_authoritative', '公网 NS 未指向当前华为云 Zone', publicNameServers, expectedNameServers);
@@ -202,7 +203,7 @@ export async function attachZoneAuthority(provider: ProviderType, zone: Zone): P
   } else if (provider === ProviderType.HUOSHAN) {
     if (huoshanNsCorrect === false) {
       result = buildResult('non_authoritative', '火山引擎返回 NS 未正确接入', publicNameServers, expectedNameServers);
-    } else if (publicNameServers && expectedNameServers.length > 0) {
+    } else if (hasResolvedPublicNameServers && expectedNameServers.length > 0) {
       result = intersects(publicNameServers, expectedNameServers)
         ? buildResult('authoritative', '公网 NS 指向当前火山引擎 Zone', publicNameServers, expectedNameServers)
         : buildResult('non_authoritative', '公网 NS 未指向当前火山引擎 Zone', publicNameServers, expectedNameServers);
@@ -224,7 +225,7 @@ export async function attachZoneAuthority(provider: ProviderType, zone: Zone): P
       result = buildResult('unknown', '京东云域名探测异常，暂时无法确认权威状态', publicNameServers, expectedNameServers);
     } else if (jdcloudStatus === '8') {
       result = buildResult('unknown', '京东云返回域名未注册状态，暂时无法确认权威状态', publicNameServers, expectedNameServers);
-    } else if (publicNameServers && expectedNameServers.length > 0) {
+    } else if (hasResolvedPublicNameServers && expectedNameServers.length > 0) {
       result = intersects(publicNameServers, expectedNameServers)
         ? buildResult('authoritative', '公网 NS 指向当前京东云域名', publicNameServers, expectedNameServers)
         : buildResult('non_authoritative', '公网 NS 未指向当前京东云域名', publicNameServers, expectedNameServers);
@@ -236,7 +237,7 @@ export async function attachZoneAuthority(provider: ProviderType, zone: Zone): P
       result = buildResult('non_authoritative', 'Spaceship 当前使用外部 DNS 托管', publicNameServers, expectedNameServers);
     } else if (isPendingStatus(spaceshipStatus)) {
       result = buildResult('pending', 'Spaceship 域名仍处于待接入状态', publicNameServers, expectedNameServers);
-    } else if (publicNameServers && expectedNameServers.length > 0) {
+    } else if (hasResolvedPublicNameServers && expectedNameServers.length > 0) {
       result = intersects(publicNameServers, expectedNameServers)
         ? buildResult('authoritative', '公网 NS 指向当前 Spaceship DNS', publicNameServers, expectedNameServers)
         : buildResult('non_authoritative', '公网 NS 未指向当前 Spaceship DNS', publicNameServers, expectedNameServers);
@@ -246,14 +247,14 @@ export async function attachZoneAuthority(provider: ProviderType, zone: Zone): P
   } else if (provider === ProviderType.NAMESILO) {
     if (namesiloStatus === 'externaldomain') {
       result = buildResult('non_authoritative', 'NameSilo 返回外部托管域名状态', publicNameServers, expectedNameServers);
-    } else if (publicNameServers && expectedNameServers.length > 0) {
+    } else if (hasResolvedPublicNameServers && expectedNameServers.length > 0) {
       result = intersects(publicNameServers, expectedNameServers)
         ? buildResult('authoritative', '公网 NS 指向当前 NameSilo DNS', publicNameServers, expectedNameServers)
         : buildResult('non_authoritative', '公网 NS 未指向当前 NameSilo DNS', publicNameServers, expectedNameServers);
     } else {
       result = buildResult('unknown', '暂时无法识别 NameSilo 域名权威状态', publicNameServers, expectedNameServers);
     }
-  } else if (publicNameServers && expectedNameServers.length > 0) {
+  } else if (hasResolvedPublicNameServers && expectedNameServers.length > 0) {
     result = intersects(publicNameServers, expectedNameServers)
       ? buildResult('authoritative', '公网 NS 指向当前 DNS 提供商', publicNameServers, expectedNameServers)
       : buildResult('non_authoritative', '公网 NS 未指向当前 DNS 提供商', publicNameServers, expectedNameServers);

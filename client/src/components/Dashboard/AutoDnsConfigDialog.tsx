@@ -134,10 +134,13 @@ export default function AutoDnsConfigDialog({
       const existingResp = await getDNSRecords(selectedZone.id, selectedZone.credentialId);
       const existingRecords = existingResp.data?.records || [];
       const expectedFqdn = normalizeHostname(request.fqdn);
+      const expectedValue = String(request.value || '').trim();
       const existingRecord = existingRecords.find((record) => {
         const sameName = toRecordFqdn(record, selectedZone.name) === expectedFqdn;
         const sameType = String(record.type || '').trim().toUpperCase() === request.recordType;
-        return sameName && sameType;
+        if (!sameName || !sameType) return false;
+        if (request.recordType !== 'TXT') return true;
+        return String(record.content || '').trim() === expectedValue;
       });
 
       const payload = {
@@ -192,6 +195,7 @@ export default function AutoDnsConfigDialog({
       setSubmitError(String(error));
     },
   });
+  const isBusy = mutation.isPending || afterActionState === 'pending';
 
   const handleSubmit = () => {
     setSubmitError(null);
@@ -206,12 +210,12 @@ export default function AutoDnsConfigDialog({
   }, [open, autoStarted, createdRecord, mutation.isPending, selectedZone, request?.value, hasMultipleCandidates]);
 
   const handleDone = () => {
-    if (mutation.isPending) return;
+    if (isBusy) return;
     onClose(!!createdRecord);
   };
 
   return (
-    <Dialog open={open} onClose={handleDone} maxWidth="sm" fullWidth>
+    <Dialog open={open} onClose={handleDone} maxWidth="sm" fullWidth disableEscapeKeyDown={isBusy}>
       <DialogTitle>{request?.title || '自动配置 DNS'}</DialogTitle>
       <DialogContent>
         <Stack spacing={2.5} sx={{ mt: 1 }}>
@@ -231,7 +235,7 @@ export default function AutoDnsConfigDialog({
                     onChange={(e) => setSelectedCandidateKey(e.target.value)}
                     fullWidth
                     size="small"
-                    disabled={mutation.isPending}
+                    disabled={isBusy}
                     helperText="当项目内命中多个主域名时，需要你确认具体落到哪一个账户/域名"
                   >
                     {candidateOptions.map((candidate) => (
@@ -306,14 +310,14 @@ export default function AutoDnsConfigDialog({
         </Stack>
       </DialogContent>
       <DialogActions sx={{ px: 3, pb: 3 }}>
-        <Button onClick={handleDone} color="inherit" disabled={mutation.isPending || afterActionState === 'pending'}>
+        <Button onClick={handleDone} color="inherit" disabled={isBusy}>
           {createdRecord ? '完成' : '取消'}
         </Button>
         {!createdRecord && hasMultipleCandidates && (
           <Button
             onClick={handleSubmit}
             variant="contained"
-            disabled={mutation.isPending || afterActionState === 'pending' || !selectedZone || !request?.value}
+            disabled={isBusy || !selectedZone || !request?.value}
           >
             开始配置
           </Button>
