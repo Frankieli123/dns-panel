@@ -286,6 +286,7 @@ export default function AddEsaSiteDialog({
   const accessHelp = ACCESS_TYPE_OPTIONS.find(o => o.value === accessType)?.help;
 
   const verifyTxtName = siteName.trim() ? `_esaauth.${siteName.trim()}` : '_esaauth.<domain>';
+  const showManualTxtGuide = !!created?.siteId && accessType === 'CNAME' && !isCheckingAutoDns && !autoDnsRequest;
 
   return (
     <Dialog open={open} onClose={handleDone} maxWidth="sm" fullWidth fullScreen={isMobile}>
@@ -421,7 +422,7 @@ export default function AddEsaSiteDialog({
                 <Typography variant="subtitle2">创建成功</Typography>
                 <Typography variant="body2">SiteId: {created.siteId}</Typography>
 
-                {accessType === 'CNAME' && (
+                {showManualTxtGuide && (
                   <>
                     <Typography variant="body2">
                       请添加 TXT 记录完成验证：

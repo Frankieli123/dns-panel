@@ -439,7 +439,7 @@ export default function Settings() {
               <CardContent>
                 <Stack spacing={2}>
                   <Typography variant="subtitle1" fontWeight={600}>
-                    域名列表每页显示数量
+                    域名列表
                   </Typography>
 
                   {domainsPerPageSuccess && (
@@ -476,15 +476,6 @@ export default function Settings() {
                     </Button>
                   </Stack>
 
-                </Stack>
-
-                <Divider sx={{ my: 3 }} />
-
-                <Stack spacing={2}>
-                  <Typography variant="subtitle1" fontWeight={600}>
-                    域名到期
-                  </Typography>
-
                   <FormControlLabel
                     control={
                       <Switch
@@ -496,6 +487,15 @@ export default function Settings() {
                   />
                   <Typography variant="body2" color="text.secondary">
                     默认隐藏仅注册或当前未托管在本项目 DNS 提供商的域名；开启后仅用于排查，不影响 ESA / 自动 DNS。
+                  </Typography>
+
+                </Stack>
+
+                <Divider sx={{ my: 3 }} />
+
+                <Stack spacing={2}>
+                  <Typography variant="subtitle1" fontWeight={600}>
+                    域名到期
                   </Typography>
 
                   {expirySettingsSuccess && (
