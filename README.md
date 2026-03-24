@@ -27,6 +27,7 @@
 
 | 版本 | 日期 | 更新内容 |
 |------|------|----------|
+| v1.6.0 | 2026-03-24 | ✨ 新增全提供商权威 DNS 识别、非权威域名显示开关、ESA 自动 DNS 配置 |
 | v1.5.0 | 2026-03-02 | 🆕 新增 Cloudflare Tunnels 管理：隧道创建/删除、详情面板、cloudflared 安装指引、三类路由管理（Public Hostnames / CIDR / 主机名路由） |
 | v1.4.1 | 2026-02-18 | ✨ 抽屉支持 DNS 服务商拖拽排序 + 前端体验优化 |
 | v1.4.0 | 2026-02-18 | ✨ 新增阿里云 ESA 站点管理与免费证书 |
@@ -37,6 +38,28 @@
 
 <details>
 <summary><b>查看完整更新日志</b></summary>
+
+### v1.6.0 (2026-03-24)
+- ✨ **新增权威 DNS 识别框架**
+  - 域名列表与详情统一输出 `authorityStatus / authorityReason / authorityMeta`
+  - 自动识别 `authoritative / pending / non_authoritative / unknown`
+  - 已接入 Cloudflare、阿里云、DNSPod、华为云、PowerDNS、火山引擎、京东云、Spaceship、NameSilo 等提供商的权威识别
+  - 对百度云、西部数码、DNSLA 等元数据不足的提供商保持保守判定，避免误判为可自动接入
+- ✨ **新增非权威域名显示开关**
+  - 设置页新增「显示非权威域名」开关，默认关闭
+  - 仅控制域名列表是否显示 `non_authoritative`
+  - `pending / unknown` 仍然显示，便于排查待接入或待识别域名
+- ✨ **增强阿里云 ESA 自动 DNS**
+  - ESA 站点创建后，如为 CNAME 接入且项目内命中可托管 `_esaauth.<domain>` 的权威域名，可直接自动创建验证 TXT
+  - ESA 业务记录创建后，如项目内命中可托管该记录名的权威域名，可直接自动创建业务 CNAME
+  - 当命中多个可用主域名时，弹窗要求用户确认目标账户 / 域名后再继续
+  - TXT 自动创建完成后会自动触发 ESA `VerifySite`
+- 🔒 **自动流程更严格**
+  - 自动 DNS / ESA 自动接入仅使用 `authoritative` 域名
+  - `unknown / pending / non_authoritative` 不参与自动接入，统一回退手动配置
+- 🐛 **修复自动 DNS 重复记录识别**
+  - 统一将不同服务商返回的相对主机名 / FQDN 规范化后再判断
+  - 已存在同名同类型记录时优先更新，避免误判为重复创建
 
 ### v1.5.0 (2026-03-02)
 - 🆕 **新增 Cloudflare Tunnels 管理**
@@ -108,10 +131,12 @@
 | 功能 | 说明 |
 |------|------|
 | 🌐 多服务商支持 | 统一管理多个 DNS 服务商的域名和解析记录 |
+| 🧭 权威 DNS 识别 | 统一识别域名是否为当前托管方权威 DNS，区分 authoritative / pending / non_authoritative / unknown |
 | 🧾 解析记录管理 | 增删改查；支持权重/线路/启停/备注等 |
 | ☁️ Cloudflare 增强 | 自定义主机名、证书状态、Fallback Origin |
 | 🚇 Cloudflare Tunnels | 隧道管理、路由配置（公网主机名 / CIDR / 主机名路由） |
 | 🛡️ 阿里云 ESA | 边缘安全加速站点管理、DNS 记录、免费证书申请/续签 |
+| ⚡ ESA 自动 DNS | 自动创建 ESA 验证 TXT / 业务 CNAME；多候选时支持人工确认目标主域名 |
 | 🔑 多用户隔离 | JWT 登录、账户与凭证隔离 |
 | 🔒 安全存储 | DNS 凭证加密存储（AES-256） |
 | 💾 数据持久化 | SQLite 数据库，挂载 Volume 即可备份迁移 |
