@@ -1,6 +1,6 @@
-import { resolveCname } from 'node:dns/promises';
 import { PrismaClient } from '@prisma/client';
 import type { CertificateChallengeState } from './AcmeService';
+import { PublicDnsProbeService } from '../dns/PublicDnsProbeService';
 
 const prisma = new PrismaClient();
 
@@ -17,7 +17,11 @@ function normalizeRr(value: any): string {
 }
 
 function buildTargetFqdn(rr: string, zoneName: string) {
-  return `${normalizeRr(rr)}.${normalizeZoneName(zoneName)}`;
+  const normalizedRr = normalizeRr(rr);
+  const normalizedZoneName = normalizeZoneName(zoneName);
+  if (!normalizedZoneName) return '';
+  if (!normalizedRr || normalizedRr === '@') return normalizedZoneName;
+  return `${normalizedRr}.${normalizedZoneName}`;
 }
 
 function mapAlias(record: any) {
@@ -84,10 +88,11 @@ export class CertificateCnameAliasService {
   static async createAlias(userId: number, input: { domain: string; dnsCredentialId: number; zoneName: string; rr: string }) {
     const domain = normalizeDomain(input.domain);
     const zoneName = normalizeZoneName(input.zoneName);
-    const rr = normalizeRr(input.rr);
+    const rrInput = input.rr;
+    const rr = normalizeRr(rrInput);
     if (!domain) throw new Error('domain 不能为空');
     if (!zoneName) throw new Error('zoneName 不能为空');
-    if (!rr) throw new Error('rr 不能为空');
+    if (rrInput === undefined || rrInput === null) throw new Error('rr 不能为空');
 
     const dnsCredential = await prisma.dnsCredential.findFirst({
       where: { id: Number(input.dnsCredentialId), userId },
@@ -119,10 +124,11 @@ export class CertificateCnameAliasService {
     const existing = await getAliasRecord(userId, id);
     const domain = input.domain !== undefined ? normalizeDomain(input.domain) : existing.domain;
     const zoneName = input.zoneName !== undefined ? normalizeZoneName(input.zoneName) : existing.zoneName;
-    const rr = input.rr !== undefined ? normalizeRr(input.rr) : existing.rr;
+    const rrInput = input.rr;
+    const rr = rrInput !== undefined ? normalizeRr(rrInput) : existing.rr;
     if (!domain) throw new Error('domain 不能为空');
     if (!zoneName) throw new Error('zoneName 不能为空');
-    if (!rr) throw new Error('rr 不能为空');
+    if (rrInput === null) throw new Error('rr 不能为空');
 
     let dnsCredentialId = existing.dnsCredentialId;
     if (input.dnsCredentialId !== undefined) {
@@ -164,19 +170,24 @@ export class CertificateCnameAliasService {
   static async checkAlias(userId: number, id: number) {
     const record = await getAliasRecord(userId, id);
     const sourceName = `_acme-challenge.${record.domain}`;
+    const probe = await PublicDnsProbeService.checkCnameStatus({
+      recordName: sourceName,
+      expectedTarget: record.targetFqdn,
+      mode: 'strict_cname',
+    });
+
     let status = 'ready';
     let lastError: string | null = null;
 
-    try {
-      const answers = await resolveCname(sourceName);
-      const matched = answers.map((item) => normalizeZoneName(item)).includes(normalizeZoneName(record.targetFqdn));
-      if (!matched) {
-        status = 'error';
-        lastError = `CNAME 未指向 ${record.targetFqdn}`;
-      }
-    } catch (error: any) {
+    if (probe.status === 'unconfigured') {
       status = 'error';
-      lastError = error?.message || 'CNAME 查询失败';
+      lastError = `CNAME 未指向 ${record.targetFqdn}`;
+    } else if (probe.status === 'unknown') {
+      status = record.status === 'ready' ? 'ready' : 'pending';
+      const detail = probe.errors?.[0];
+      lastError = detail
+        ? `公网 DNS / DoH 暂时不可用，未能确认 CNAME 状态：${detail}`
+        : '公网 DNS / DoH 暂时不可用，未能确认 CNAME 状态';
     }
 
     const updated = await prisma.certificateCnameAlias.update({

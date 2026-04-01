@@ -50,7 +50,6 @@ export default function ApplyCertificateDialog({
     setDomainsText('');
     setAutoRenew(true);
     setSubmitError(null);
-    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [open]);
 
   useEffect(() => {

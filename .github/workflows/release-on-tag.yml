@@ -9,7 +9,11 @@ env:
   IMAGE_NAME: a3180623/dns-panel
 
 jobs:
+  quality:
+    uses: ./.github/workflows/quality.yml
+
   docker:
+    needs: quality
     name: Build & Push Docker Image
     runs-on: ubuntu-latest
     environment: docker hub

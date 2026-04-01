@@ -10,7 +10,11 @@ env:
   IMAGE_NAME: a3180623/dns-panel
 
 jobs:
+  quality:
+    uses: ./.github/workflows/quality.yml
+
   build-and-push:
+    needs: quality
     runs-on: ubuntu-latest
     environment: docker hub
     permissions:

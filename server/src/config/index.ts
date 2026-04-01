@@ -8,6 +8,18 @@ const resolvedNodeEnv = String(process.env.NODE_ENV || 'development').trim().toL
 const defaultAcmeEnv = resolvedNodeEnv === 'production' ? 'production' : 'staging';
 const resolvedAcmeEnv = (String(process.env.ACME_ENV || defaultAcmeEnv).trim().toLowerCase() === 'production' ? 'production' : 'staging') as 'staging' | 'production';
 
+function parseIntWithMin(value: string | undefined, fallback: number, min: number) {
+  const parsed = parseInt(String(value || ''), 10);
+  return Math.max(min, Number.isFinite(parsed) ? parsed : fallback);
+}
+
+function parseList(value: string | undefined, fallback: string[]) {
+  const items = String(value || '')
+    .split(',')
+    .map((item) => item.trim())
+    .filter(Boolean);
+  return items.length > 0 ? Array.from(new Set(items)) : fallback;
+}
 
 export const config = {
   // 环境配置
@@ -60,6 +72,16 @@ export const config = {
     domainsTTL: 300, // 5 分钟
     recordsTTL: 120, // 2 分钟
     userTTL: 600, // 10 分钟
+  },
+
+  dnsProbe: {
+    resolvers: parseList(process.env.DNS_PROBE_RESOLVERS, ['223.5.5.5', '223.6.6.6', '119.29.29.29', '1.1.1.1', '8.8.8.8']),
+    dohProviders: parseList(process.env.DNS_PROBE_DOH_PROVIDERS, ['https://dns.alidns.com/resolve', 'https://doh.pub/resolve', 'https://doh.360.cn/resolve']),
+    timeoutMs: parseIntWithMin(process.env.DNS_PROBE_TIMEOUT_MS, 2500, 1000),
+    maxCnameDepth: parseIntWithMin(process.env.DNS_PROBE_MAX_CNAME_DEPTH, 6, 1),
+    successCacheTtlSec: parseIntWithMin(process.env.DNS_PROBE_SUCCESS_CACHE_TTL_SEC, 60, 1),
+    negativeCacheTtlSec: parseIntWithMin(process.env.DNS_PROBE_NEGATIVE_CACHE_TTL_SEC, 15, 1),
+    unknownCacheTtlSec: parseIntWithMin(process.env.DNS_PROBE_UNKNOWN_CACHE_TTL_SEC, 5, 1),
   },
 
   // 速率限制配置

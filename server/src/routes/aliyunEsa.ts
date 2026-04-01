@@ -1,7 +1,7 @@
 import { Router } from 'express';
 import { PrismaClient } from '@prisma/client';
-import { Resolver } from 'dns/promises';
 import { decrypt } from '../utils/encryption';
+import { PublicDnsProbeService } from '../services/dns/PublicDnsProbeService';
 import { successResponse, errorResponse } from '../utils/response';
 import { authenticateToken } from '../middleware/auth';
 import type { AuthRequest } from '../types';
@@ -43,6 +43,15 @@ function normalizeRegion(value: unknown): string | undefined {
   // cn-hangzhou / ap-southeast-1 ...
   if (!/^[a-z]{2}-[a-z0-9-]+$/i.test(r)) return undefined;
   return r;
+}
+
+function parseOptionalBoolean(value: unknown): boolean | undefined {
+  if (typeof value === 'boolean') return value;
+  if (typeof value !== 'string') return undefined;
+  const normalized = value.trim().toLowerCase();
+  if (normalized === 'true') return true;
+  if (normalized === 'false') return false;
+  return undefined;
 }
 
 function isEsaRetryableRegionError(error: any): boolean {
@@ -163,86 +172,6 @@ async function getAliyunAuth(userId: number, credentialId?: number) {
 
 function normalizeDnsName(name: string): string {
   return String(name || '').trim().replace(/\.$/, '').toLowerCase();
-}
-
-function withTimeout<T>(promise: Promise<T>, ms: number): Promise<T> {
-  return new Promise((resolve, reject) => {
-    const timer = setTimeout(() => reject(Object.assign(new Error('DNS 查询超时'), { code: 'DNS_TIMEOUT' })), ms);
-    promise.then(
-      (value) => {
-        clearTimeout(timer);
-        resolve(value);
-      },
-      (err) => {
-        clearTimeout(timer);
-        reject(err);
-      }
-    );
-  });
-}
-
-async function resolveCnameTargets(resolver: Resolver, hostname: string): Promise<string[]> {
-  try {
-    const targets = await withTimeout(resolver.resolveCname(hostname), 2500);
-    return Array.isArray(targets) ? targets.map((t) => String(t || '').trim()).filter(Boolean) : [];
-  } catch {
-    return [];
-  }
-}
-
-async function resolveIps(resolver: Resolver, hostname: string): Promise<string[]> {
-  const results: string[] = [];
-
-  try {
-    const ips4 = await withTimeout(resolver.resolve4(hostname), 2500);
-    if (Array.isArray(ips4)) results.push(...ips4);
-  } catch {
-    // ignore
-  }
-
-  try {
-    const ips6 = await withTimeout(resolver.resolve6(hostname), 2500);
-    if (Array.isArray(ips6)) results.push(...ips6);
-  } catch {
-    // ignore
-  }
-
-  return Array.from(new Set(results.map((ip) => String(ip || '').trim()).filter(Boolean)));
-}
-
-function hasIntersection(a: string[], b: string[]): boolean {
-  if (a.length === 0 || b.length === 0) return false;
-  const set = new Set(a);
-  return b.some((x) => set.has(x));
-}
-
-async function checkCnameStatusOne(resolver: Resolver, recordName: string, recordCname: string): Promise<{ recordName: string; status: string }> {
-  const name = normalizeDnsName(recordName);
-  const expected = normalizeDnsName(recordCname);
-
-  if (!name || !expected) {
-    return { recordName, status: 'unknown' };
-  }
-
-  const cnames = (await resolveCnameTargets(resolver, name)).map(normalizeDnsName).filter(Boolean);
-  if (cnames.includes(expected)) {
-    return { recordName, status: 'configured' };
-  }
-
-  const [nameIps, expectedIps] = await Promise.all([
-    resolveIps(resolver, name),
-    resolveIps(resolver, expected),
-  ]);
-
-  if (hasIntersection(nameIps, expectedIps)) {
-    return { recordName, status: 'configured' };
-  }
-
-  if (nameIps.length === 0 && cnames.length === 0) {
-    return { recordName, status: 'unconfigured' };
-  }
-
-  return { recordName, status: 'unconfigured' };
 }
 
 async function mapWithConcurrency<T, R>(items: T[], concurrency: number, fn: (item: T) => Promise<R>): Promise<R[]> {
@@ -487,7 +416,7 @@ router.get('/records', async (req: AuthRequest, res) => {
     const recordName = typeof req.query.recordName === 'string' ? req.query.recordName : undefined;
     const recordMatchType = typeof req.query.recordMatchType === 'string' ? req.query.recordMatchType : undefined;
     const type = typeof req.query.type === 'string' ? req.query.type : undefined;
-    const proxied = req.query.proxied as any;
+    const proxied = parseOptionalBoolean(req.query.proxied);
 
     const { auth } = await getAliyunAuth(userId, credentialId);
     const result = await listEsaRecords(auth, {
@@ -744,8 +673,14 @@ router.post('/cname-status', async (req: AuthRequest, res) => {
 
     if (pairs.length === 0) return errorResponse(res, 'records 为空或缺少 recordName/recordCname', 400);
 
-    const resolver = new Resolver();
-    const results = await mapWithConcurrency(pairs, 6, (r) => checkCnameStatusOne(resolver, r.recordName, r.recordCname));
+    const results = await mapWithConcurrency(pairs, 6, async (r) => ({
+      recordName: r.recordName,
+      status: (await PublicDnsProbeService.checkCnameStatus({
+        recordName: r.recordName,
+        expectedTarget: r.recordCname,
+        mode: 'access_cname',
+      })).status,
+    }));
 
     return successResponse(res, { results }, '检测 CNAME 状态成功');
   } catch (error: any) {
