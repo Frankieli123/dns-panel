@@ -21,6 +21,7 @@ import { parseDomains } from './certificateUtils';
 export default function ApplyCertificateDialog({
   open,
   certificateCredentials,
+  certificateCredentialsLoading,
   dnsCredentials,
   dnsLoading,
   submittingMode,
@@ -30,6 +31,7 @@ export default function ApplyCertificateDialog({
 }: {
   open: boolean;
   certificateCredentials: CertificateCredential[];
+  certificateCredentialsLoading: boolean;
   dnsCredentials: DnsCredential[];
   dnsLoading: boolean;
   submittingMode: 'draft' | 'apply' | null;
@@ -102,7 +104,7 @@ export default function ApplyCertificateDialog({
       <DialogTitle sx={certificateDialogTitleSx}>申请证书</DialogTitle>
       <DialogContent sx={certificateDialogContentSx}>
         <Stack spacing={1.5}>
-          {certificateCredentials.length === 0 ? (
+          {!certificateCredentialsLoading && certificateCredentials.length === 0 ? (
             <Alert severity="warning">暂无可用 ACME 账户，请先切换到“ACME账户”Tab 新增。</Alert>
           ) : null}
 
@@ -115,9 +117,10 @@ export default function ApplyCertificateDialog({
             label="ACME账户"
             value={certificateCredentialId || ''}
             onChange={(event) => setCertificateCredentialId(parseInt(event.target.value, 10))}
-            disabled={submitting || certificateCredentials.length === 0}
+            disabled={submitting || certificateCredentialsLoading || certificateCredentials.length === 0}
             fullWidth
             size="small"
+            helperText={certificateCredentialsLoading ? '正在加载 ACME 账户...' : undefined}
           >
             {certificateCredentials.map((credential) => (
               <MenuItem key={credential.id} value={credential.id}>

@@ -1,6 +1,7 @@
 import http from 'node:http';
 import https from 'node:https';
-import { requestText } from './httpClient';
+import { X509Certificate, createPrivateKey, createPublicKey } from 'node:crypto';
+import { requestJson, requestText } from './httpClient';
 
 export interface DokployConfig {
   baseUrl: string;
@@ -33,6 +34,21 @@ function sanitizeFileNamePrefix(input: string): string {
   return value || 'cert-default';
 }
 
+function normalizeFileContent(input: string) {
+  return String(input).replace(/\r\n/g, '\n');
+}
+
+interface DokployFlatFileExpectation {
+  path: string;
+  content: string;
+}
+
+function extractLeafCertificatePem(input: string) {
+  const matched = String(input).match(/-----BEGIN CERTIFICATE-----[\s\S]+?-----END CERTIFICATE-----/);
+  if (!matched?.[0]) throw new Error('证书内容格式无效');
+  return matched[0];
+}
+
 export class DokployService {
   private static readonly REQUEST_ATTEMPTS = 3;
   private static readonly PUSH_RETRY_COUNT = 3;
@@ -56,6 +72,11 @@ export class DokployService {
     this.agent = this.createAgent();
 
     if (!this.apiKey) throw new Error('Dokploy API Key 不能为空');
+  }
+
+  private log(level: 'info' | 'warn' | 'error', message: string, extra?: Record<string, any>) {
+    const payload = extra ? ` ${JSON.stringify(extra)}` : '';
+    console[level](`[dokploy-deploy] ${message}${payload}`);
   }
 
   private createAgent() {
@@ -86,6 +107,7 @@ export class DokployService {
     const message = String(error?.message || '');
     if ([408, 429, 500, 502, 503, 504, 520, 521, 522, 523, 524].includes(httpStatus)) return true;
     return [
+      'EDOKPLOYVERIFY',
       'ECONNRESET',
       'ECONNREFUSED',
       'EHOSTUNREACH',
@@ -94,7 +116,7 @@ export class DokployService {
       'ETIMEDOUT',
       'ESOCKETTIMEDOUT',
       'EAI_AGAIN',
-    ].includes(code) || /timed?\s*out|请求超时|socket hang up|econnreset|econnrefused|etimedout|network/i.test(message);
+    ].includes(code) || /timed?\s*out|请求超时|socket hang up|econnreset|econnrefused|etimedout|network|回读校验失败/i.test(message);
   }
 
   private async sleep(ms: number) {
@@ -130,8 +152,16 @@ export class DokployService {
     return headers;
   }
 
+  private buildApiUrl(path: string, query?: Record<string, string | undefined>) {
+    const url = new URL(`${this.baseUrl}/api/${String(path || '').replace(/^\/+/, '')}`);
+    Object.entries(query || {}).forEach(([key, value]) => {
+      if (value !== undefined && value !== '') url.searchParams.set(key, value);
+    });
+    return url.toString();
+  }
+
   private async request(path: string, init?: { method?: string; body?: Record<string, any> }) {
-    const url = `${this.baseUrl}/api/${String(path || '').replace(/^\/+/, '')}`;
+    const url = this.buildApiUrl(path);
 
     for (let attempt = 1; attempt <= DokployService.REQUEST_ATTEMPTS; attempt += 1) {
       try {
@@ -186,6 +216,78 @@ export class DokployService {
     });
   }
 
+  async readTraefikFile(path: string) {
+    const url = this.buildApiUrl('settings.readTraefikFile', {
+      path,
+      serverId: this.serverId || undefined,
+    });
+
+    for (let attempt = 1; attempt <= DokployService.REQUEST_ATTEMPTS; attempt += 1) {
+      try {
+        const response = await requestJson<string | null>({
+          url,
+          method: 'GET',
+          timeoutMs: this.timeoutMs,
+          allowInsecureTls: this.allowInsecureTls,
+          agent: this.agent,
+          headers: this.buildHeaders(false),
+        });
+
+        if (response.status < 200 || response.status >= 300) {
+          throw Object.assign(new Error(`Dokploy 请求失败: HTTP ${response.status}`), {
+            httpStatus: response.status,
+            responseBody: response.raw,
+          });
+        }
+
+        return typeof response.data === 'string' ? response.data : null;
+      } catch (error: any) {
+        if (attempt >= DokployService.REQUEST_ATTEMPTS || !this.isRetryableError(error)) throw error;
+        this.resetAgent();
+        await this.sleep(600 * attempt);
+      }
+    }
+
+    throw new Error('Dokploy 请求失败');
+  }
+
+  private async verifyFlatFiles(files: DokployFlatFileExpectation[]) {
+    this.log('info', '开始回读校验 Dokploy 文件', {
+      serverId: this.serverId || 'local',
+      paths: files.map((file) => file.path),
+    });
+    for (const file of files) {
+      const actual = await this.readTraefikFile(file.path);
+      if (actual === null) {
+        this.log('warn', 'Dokploy 文件回读为空', { path: file.path });
+        return false;
+      }
+      if (normalizeFileContent(actual) !== normalizeFileContent(file.content)) {
+        this.log('warn', 'Dokploy 文件回读内容不匹配', {
+          path: file.path,
+          expectedLength: normalizeFileContent(file.content).length,
+          actualLength: normalizeFileContent(actual).length,
+        });
+        return false;
+      }
+    }
+    this.log('info', 'Dokploy 文件回读校验成功', {
+      serverId: this.serverId || 'local',
+      fileCount: files.length,
+    });
+    return true;
+  }
+
+  private validateCertificatePair(certificatePem: string, privateKeyPem: string) {
+    const leafCertificate = new X509Certificate(extractLeafCertificatePem(certificatePem));
+    const privateKey = createPrivateKey(privateKeyPem);
+    const certificatePublicKey = leafCertificate.publicKey.export({ type: 'spki', format: 'der' });
+    const privatePublicKey = createPublicKey(privateKey).export({ type: 'spki', format: 'der' });
+    if (!Buffer.from(certificatePublicKey).equals(Buffer.from(privatePublicKey))) {
+      throw new Error('证书与私钥不匹配');
+    }
+  }
+
   async reloadTraefik() {
     await this.request('settings.reloadTraefik', {
       method: 'POST',
@@ -199,23 +301,77 @@ export class DokployService {
       const crtPath = `${this.dynamicRoot}/${fileNamePrefix}.crt`;
       const keyPath = `${this.dynamicRoot}/${fileNamePrefix}.key`;
       const ymlPath = `${this.dynamicRoot}/${fileNamePrefix}.yml`;
+      const certificatePem = String(input.certificatePem || '').trim();
+      const privateKeyPem = String(input.privateKeyPem || '').trim();
+      this.validateCertificatePair(certificatePem, privateKeyPem);
+      const updatedAt = new Date().toISOString();
       const yml = [
         'tls:',
         '  certificates:',
         `    - certFile: ${crtPath}`,
         `      keyFile: ${keyPath}`,
         '',
+        `# updatedAt: ${updatedAt}`,
+        '',
       ].join('\n');
+      const expectedFiles: DokployFlatFileExpectation[] = [
+        { path: crtPath, content: certificatePem },
+        { path: keyPath, content: privateKeyPem },
+        { path: ymlPath, content: yml },
+      ];
 
-      await this.withRetry(async () => {
-        await this.updateTraefikFile(crtPath, String(input.certificatePem || '').trim());
-        await this.updateTraefikFile(keyPath, String(input.privateKeyPem || '').trim());
-        await this.updateTraefikFile(ymlPath, yml);
+      let verificationMode: 'direct' | 'readback' = 'direct';
 
-        if (this.reloadTraefikAfterPush) {
-          await this.reloadTraefik();
+      this.log('info', '开始推送 Dokploy 证书文件', {
+        serverId: this.serverId || 'local',
+        crtPath,
+        keyPath,
+        ymlPath,
+        reloadTraefikAfterPush: this.reloadTraefikAfterPush,
+      });
+
+      try {
+        await this.withRetry(async () => {
+          await this.updateTraefikFile(crtPath, certificatePem);
+          await this.updateTraefikFile(keyPath, privateKeyPem);
+          await this.updateTraefikFile(ymlPath, yml);
+          const verified = await this.verifyFlatFiles(expectedFiles);
+          if (!verified) {
+            throw Object.assign(new Error('Dokploy 文件回读校验失败'), {
+              code: 'EDOKPLOYVERIFY',
+            });
+          }
+
+          if (this.reloadTraefikAfterPush) {
+            await this.reloadTraefik();
+          }
+        }, DokployService.PUSH_RETRY_COUNT + 1);
+      } catch (error: any) {
+        if (!this.reloadTraefikAfterPush && this.isRetryableError(error)) {
+          this.log('warn', 'Dokploy 推送返回异常，尝试用回读校验改判', {
+            error: error?.message || String(error),
+            serverId: this.serverId || 'local',
+          });
+          const verified = await this.verifyFlatFiles(expectedFiles).catch(() => false);
+          if (verified) {
+            verificationMode = 'readback';
+            this.log('info', 'Dokploy 推送已通过回读校验改判成功', {
+              serverId: this.serverId || 'local',
+              paths: expectedFiles.map((file) => file.path),
+            });
+          } else {
+            throw error;
+          }
+        } else {
+          throw error;
         }
-      }, DokployService.PUSH_RETRY_COUNT + 1);
+      }
+
+      this.log('info', 'Dokploy 推送完成', {
+        serverId: this.serverId || 'local',
+        verificationMode,
+        reloadTraefikAfterPush: this.reloadTraefikAfterPush,
+      });
 
       return {
         fileNamePrefix,
@@ -223,6 +379,7 @@ export class DokployService {
         keyPath,
         ymlPath,
         reloaded: this.reloadTraefikAfterPush,
+        verificationMode,
       };
     } finally {
       this.destroyAgent();

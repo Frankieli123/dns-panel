@@ -189,7 +189,7 @@ export default function CertificateOrderSection() {
           </Stack>
         </Stack>
 
-        {certificateCredentials.length === 0 ? (
+        {!loading && certificateCredentials.length === 0 ? (
           <Alert severity="warning">暂无 ACME 账户，请先切到“ACME账户”Tab 新增账户。</Alert>
         ) : null}
         {!dnsLoading && dnsCredentials.length === 0 ? (
@@ -218,6 +218,7 @@ export default function CertificateOrderSection() {
       <ApplyCertificateDialog
         open={dialogOpen}
         certificateCredentials={certificateCredentials}
+        certificateCredentialsLoading={loading}
         dnsCredentials={dnsCredentials}
         dnsLoading={dnsLoading}
         submittingMode={submittingMode}

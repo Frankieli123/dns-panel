@@ -2850,6 +2850,15 @@ async function logDeploy(userId: number, domain: string, recordName: string, sta
   });
 }
 
+function formatDokployDeployLogMessage(result: { verificationMode?: 'direct' | 'readback'; crtPath?: string; keyPath?: string; ymlPath?: string } | null | undefined) {
+  if (!result) return undefined;
+  const base = result.verificationMode === 'readback'
+    ? 'Dokploy 返回异常后，已通过回读校验确认文件完整落地'
+    : 'Dokploy 已完成文件写入并通过回读校验';
+  const paths = [result.crtPath, result.keyPath, result.ymlPath].filter(Boolean).join(' | ');
+  return paths ? `${base}：${paths}` : base;
+}
+
 export class CertificateDeployService {
   static listTypes() {
     return listAvailableTargetTypes();
@@ -4231,6 +4240,7 @@ export class CertificateDeployService {
 
     try {
       let nextBindingJson: string | null | undefined;
+      let deployLogMessage: string | undefined;
 
       if (!EXECUTABLE_TARGET_TYPES.has(type)) {
         throw new Error('当前部署目标类型正在接入中，执行器尚未完成');
@@ -4259,11 +4269,12 @@ export class CertificateDeployService {
           date: new Date().toISOString().slice(0, 10),
           orderId: String(source.id),
         });
-        await service.pushFlatFiles({
+        const result = await service.pushFlatFiles({
           certificatePem: certData.fullchainPem || certData.certificatePem,
           privateKeyPem: certData.privateKeyPem,
           fileNamePrefix: prefix,
         });
+        deployLogMessage = formatDokployDeployLogMessage(result);
       } else if (type === 'cloudflare_custom_hostname') {
         const configData = parseStoredConfig<CloudflareCustomHostnameConfigStored>(target.configJson, { dnsCredentialId: 0 });
         const binding = parseJson<CloudflareCustomHostnameBinding | null>(job.bindingJson, null);
@@ -5439,7 +5450,7 @@ export class CertificateDeployService {
           data: { status: 'success', finishedAt: new Date(), lastError: null },
         });
       }
-      await logDeploy(source.userId, source.primaryDomain, logName, 'SUCCESS');
+      await logDeploy(source.userId, source.primaryDomain, logName, 'SUCCESS', deployLogMessage);
       await CertificateNotificationService.notifyDeploymentResult(source.userId, {
         primaryDomain: source.primaryDomain,
         targetName: target.name,
